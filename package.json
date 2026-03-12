@@ -1,13 +1,13 @@
 {
   "name": "wab-monorepo",
   "private": true,
-  "workspaces": ["server", "client"],
+  "workspaces": ["server", "chatclone-react"],
   "scripts": {
-    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w client && npm run build -w server",
+    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w chatclone-react\"",
+    "build": "npm run build -w chatclone-react && npm run build -w server",
     "start": "node server/dist/index.js",
     "server": "npm run dev -w server",
-    "client": "npm run dev -w client"
+    "client": "npm run dev -w chatclone-react"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

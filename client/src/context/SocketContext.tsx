@@ -9,7 +9,7 @@ interface SocketContextType {
 
 const SocketContext = createContext<SocketContextType>({ socket: null, connected: false });
 
-const socketUrl = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin;
+const socketUrl = import.meta.env.VITE_SOCKET_URL || window.location.origin;
 
 // Single shared socket instance — created lazily, never torn down by React
 let sharedSocket: Socket | null = null;
