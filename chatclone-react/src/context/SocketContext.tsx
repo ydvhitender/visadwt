@@ -24,6 +24,7 @@ function getSocket(token: string): Socket {
   }
   sharedSocket = io(socketUrl, {
     auth: { token },
+    path: '/elwtapp/socket.io/',
     transports: ['websocket'],
   });
   sharedToken = token;

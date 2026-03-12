@@ -8,7 +8,7 @@ let io: SocketServer;
 export function initSocketIO(httpServer: HttpServer): SocketServer {
   io = new SocketServer(httpServer, {
     cors: {
-      origin: env.CLIENT_URL,
+      origin: env.CLIENT_URL.split(',').map((s) => s.trim()),
       methods: ['GET', 'POST'],
     },
   });

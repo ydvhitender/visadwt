@@ -27,7 +27,7 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <BrowserRouter>
+          <BrowserRouter basename="/elwtapp">
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route

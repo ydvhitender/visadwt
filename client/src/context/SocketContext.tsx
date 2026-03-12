@@ -9,7 +9,12 @@ interface SocketContextType {
 
 const SocketContext = createContext<SocketContextType>({ socket: null, connected: false });
 
+<<<<<<< HEAD
 const socketUrl = import.meta.env.VITE_SOCKET_URL || window.location.origin;
+=======
+const socketUrl = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin;
+const socketPath = import.meta.env.DEV ? '/socket.io' : '/elwtapp/socket.io';
+>>>>>>> dab62c0 (new final changes)
 
 // Single shared socket instance — created lazily, never torn down by React
 let sharedSocket: Socket | null = null;
@@ -23,6 +28,7 @@ function getSocket(token: string): Socket {
     sharedSocket.disconnect();
   }
   sharedSocket = io(socketUrl, {
+    path: socketPath,
     auth: { token },
     transports: ['websocket'],
   });

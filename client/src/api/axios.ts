@@ -1,7 +1,11 @@
 import axios from 'axios';
 
 const api = axios.create({
+<<<<<<< HEAD
   baseURL: import.meta.env.VITE_API_URL || '/api',
+=======
+  baseURL: '/elwtapp/api',
+>>>>>>> dab62c0 (new final changes)
 });
 
 api.interceptors.request.use((config) => {
@@ -18,7 +22,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('wab_token');
       localStorage.removeItem('wab_user');
-      window.location.href = '/login';
+      window.location.href = '/elwtapp/login';
     }
     return Promise.reject(error);
   }

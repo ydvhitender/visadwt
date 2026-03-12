@@ -54,7 +54,7 @@ function AppRoutes() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename="/elwtapp">
         <AuthProvider>
           <AppRoutes />
         </AuthProvider>
