@@ -6,6 +6,7 @@ import EmptyChatPanel from "@/components/EmptyChatPanel";
 import ContactProfilePanel from "@/components/ContactProfilePanel";
 import SettingsPanel from "@/components/SettingsPanel";
 import IconSidebar, { type IconTab } from "@/components/IconSidebar";
+import ResizeHandle from "@/components/ResizeHandle";
 import { useSocket } from "@/context/SocketContext";
 import { useAuth } from "@/context/AuthContext";
 import { useConversations, useConversationUpdaters } from "@/hooks/useConversations";
@@ -25,6 +26,16 @@ const Index = () => {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [activeTab, setActiveTab] = useState<IconTab>("chats");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(380); // px, default ~30%
+  const [profileWidth, setProfileWidth] = useState(340); // px
+
+  const handleSidebarResize = useCallback((delta: number) => {
+    setSidebarWidth((w) => Math.min(600, Math.max(280, w + delta)));
+  }, []);
+
+  const handleProfileResize = useCallback((delta: number) => {
+    setProfileWidth((w) => Math.min(600, Math.max(280, w + delta)));
+  }, []);
   const { socket } = useSocket();
   const { user } = useAuth();
   const { updateConversationInCache } = useConversationUpdaters();
@@ -118,7 +129,7 @@ const Index = () => {
       />
 
       {/* Side panel — switches based on active tab */}
-      <div className="w-[30%] min-w-[340px] max-w-[420px] shrink-0 border-r border-border">
+      <div className="shrink-0 border-r border-border" style={{ width: sidebarWidth }}>
         {activeTab === "chats" ? (
           <ChatSidebar
             selectedConversationId={selectedId}
@@ -147,6 +158,9 @@ const Index = () => {
         )}
       </div>
 
+      {/* Resize handle for sidebar */}
+      <ResizeHandle onResize={handleSidebarResize} direction="left" />
+
       {/* Main panel */}
       <div className="flex min-w-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
@@ -163,12 +177,16 @@ const Index = () => {
 
         {/* Contact profile panel */}
         {profileOpen && selectedConversation && (
-          <div className="w-[340px] shrink-0">
-            <ContactProfilePanel
-              conversation={selectedConversation}
-              onClose={() => setProfileOpen(false)}
-            />
-          </div>
+          <>
+            {/* Resize handle for profile panel */}
+            <ResizeHandle onResize={handleProfileResize} direction="right" />
+            <div className="shrink-0" style={{ width: profileWidth }}>
+              <ContactProfilePanel
+                conversation={selectedConversation}
+                onClose={() => setProfileOpen(false)}
+              />
+            </div>
+          </>
         )}
       </div>
     </div>
