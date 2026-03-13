@@ -1,0 +1,30 @@
+module.exports = {
+    apps: [
+        {
+            name: 'wab-server-dev',
+            script: 'npx',
+            args: 'tsx watch src/index.ts',
+            cwd: './server',
+            env_file: '../.env',
+            watch: false,
+            autorestart: true,
+            max_memory_restart: '500M',
+            error_file: './logs/server-err.log',
+            out_file: './logs/server-out.log',
+            merge_logs: true,
+            time: true,
+        },
+        {
+            name: 'wab-client-dev',
+            script: 'npx',
+            args: 'vite --host',
+            cwd: './chatclone-react',
+            watch: false,
+            autorestart: true,
+            error_file: './logs/client-err.log',
+            out_file: './logs/client-out.log',
+            merge_logs: true,
+            time: true,
+        },
+    ],
+};

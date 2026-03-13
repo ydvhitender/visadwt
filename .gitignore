@@ -2,9 +2,11 @@ node_modules/
 dist/
 .env
 .env.production
+.env.local
 *.log
 .DS_Store
 client/dist/
 server/dist/
-uploads/
 logs/
+bun.lock
+bun.lockb
