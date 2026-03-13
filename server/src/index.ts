@@ -13,6 +13,7 @@ async function start() {
 
   server.listen(env.PORT, () => {
     logger.info(`Server running on port ${env.PORT}`);
+    logger.info(`Created by elnitish`);
     logger.info(`Environment: ${env.NODE_ENV}`);
   });
 }

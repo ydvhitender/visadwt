@@ -22,7 +22,12 @@
       "Bash(curl -s -H \"bypass-tunnel-reminder: true\" \"https://cute-adults-wash.loca.lt/api/health\")",
       "Bash(curl -s -H \"bypass-tunnel-reminder: true\" \"https://cute-adults-wash.loca.lt/api/webhook?hub.mode=subscribe&hub.verify_token=nitishapple11&hub.challenge=test123\")",
       "Bash(curl -s -X POST \"https://graph.facebook.com/v22.0/1465817245036146/subscribed_apps\" -H \"Authorization: Bearer EAATlV4uc7aMBQ1bXXtsaRcQiKDBUVd6BhzAEz3ZBWikY2s1lEkgANNASkch2X6lKoh3TQVUFAdWZBhizUfkYeoktuKjm42yyUV7y0KBWgzZBYCKBszxXMssnOPlm2O1t0EOtm82wbtuQqiw92shV3o89PI1TeTkjoYfWIOKJwwZBtIepXweX8beCtZAmKZARIMr4MuSZC6Y2Qhif1LR2ZCUjAo7esjU0nqq1VTQYVLAspQJozpyZCyq6HR64mknQgYd2fLmRs73HzVirCFAbtxzjPJAZDZD\" -H \"Content-Type: application/json\")",
-      "Bash(npm run build)"
+      "Bash(npm run build)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
