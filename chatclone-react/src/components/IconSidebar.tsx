@@ -7,11 +7,12 @@ import {
   Moon,
   Sun,
   Settings,
+  BarChart3,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { initials } from '@/lib/format';
 
-export type IconTab = 'chats' | 'calls' | 'status' | 'channels' | 'communities' | 'settings';
+export type IconTab = 'chats' | 'calls' | 'status' | 'channels' | 'communities' | 'analytics' | 'settings';
 
 interface IconSidebarProps {
   activeTab: IconTab;
@@ -26,6 +27,7 @@ const navItems: { tab: IconTab; icon: typeof MessageCircle; label: string }[] = 
   { tab: 'status', icon: RefreshCw, label: 'Status' },
   { tab: 'channels', icon: Radio, label: 'Channels' },
   { tab: 'communities', icon: Users, label: 'Communities' },
+  { tab: 'analytics', icon: BarChart3, label: 'Analytics' },
 ];
 
 export default function IconSidebar({

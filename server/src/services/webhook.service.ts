@@ -3,6 +3,7 @@ import { Conversation } from '../models/Conversation';
 import { Message, MessageType } from '../models/Message';
 import { getIO } from '../config/socket';
 import { normalizePhone, formatPhone } from '../utils/phone';
+import { whatsappService } from './whatsapp.service';
 import { logger } from '../utils/logger';
 import type { WebhookValue, WebhookMessage, WebhookStatus, WebhookContact } from '../types/webhook.types';
 
@@ -74,8 +75,16 @@ class WebhookService {
         const doc = waMessage.document;
         const mediaSource = doc || media;
         if (mediaSource) {
+          // Resolve media URL from WhatsApp
+          let mediaUrl: string | undefined;
+          try {
+            mediaUrl = await whatsappService.getMediaUrl(mediaSource.id);
+          } catch (err) {
+            logger.warn(`Failed to resolve media URL for ${mediaSource.id}:`, err);
+          }
           messageData.media = {
             mediaId: mediaSource.id,
+            url: mediaUrl,
             mimeType: mediaSource.mime_type,
             sha256: mediaSource.sha256,
             caption: mediaSource.caption,
@@ -93,8 +102,51 @@ class WebhookService {
           listReply: waMessage.interactive.list_reply,
         };
       }
+      if (waMessage.contacts) {
+        messageData.contacts = waMessage.contacts.map((c: any) => ({
+          name: c.name,
+          phones: c.phones,
+          emails: c.emails,
+        }));
+      }
       if (waMessage.context) {
         messageData.context = { messageId: waMessage.context.id };
+      }
+
+      // Handle reactions: update the target message instead of creating a new one
+      if (waMessage.reaction) {
+        const targetMsg = await Message.findOne({ waMessageId: waMessage.reaction.message_id });
+        if (targetMsg) {
+          if (waMessage.reaction.emoji) {
+            // Add or update reaction
+            const existingIdx = (targetMsg.reactions || []).findIndex(
+              (r: any) => r.waId === waId
+            );
+            if (existingIdx >= 0) {
+              targetMsg.reactions![existingIdx].emoji = waMessage.reaction.emoji;
+            } else {
+              if (!targetMsg.reactions) targetMsg.reactions = [];
+              targetMsg.reactions.push({
+                emoji: waMessage.reaction.emoji,
+                waId,
+                reactedAt: new Date(),
+              });
+            }
+          } else {
+            // Empty emoji = remove reaction
+            targetMsg.reactions = (targetMsg.reactions || []).filter(
+              (r: any) => r.waId !== waId
+            );
+          }
+          await targetMsg.save();
+
+          const io = getIO();
+          io.to(`conversation:${targetMsg.conversation}`).emit('message_reaction', {
+            messageId: targetMsg._id,
+            reactions: targetMsg.reactions,
+          });
+        }
+        return; // Don't create a new message for reactions
       }
 
       const message = await Message.create(messageData);

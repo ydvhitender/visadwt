@@ -146,6 +146,17 @@ class WhatsAppService {
     return this.send({ messaging_product: 'whatsapp', to, type: 'template', template });
   }
 
+  // ──── REACTION ────
+  async sendReaction(to: string, messageId: string, emoji: string) {
+    return this.send({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'reaction',
+      reaction: { message_id: messageId, emoji },
+    });
+  }
+
   // ──── MEDIA UPLOAD ────
   async uploadMedia(fileBuffer: Buffer, mimeType: string, filename: string) {
     const form = new FormData();

@@ -12,6 +12,9 @@ import contactRoutes from './routes/contact.routes';
 import templateRoutes from './routes/template.routes';
 import mediaRoutes from './routes/media.routes';
 import userRoutes from './routes/user.routes';
+import cannedResponseRoutes from './routes/cannedResponse.routes';
+import tagRoutes from './routes/tag.routes';
+import analyticsRoutes from './routes/analytics.routes';
 
 const app = express();
 
@@ -40,6 +43,9 @@ app.use('/api/contacts', contactRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/canned-responses', cannedResponseRoutes);
+app.use('/api/tags', tagRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

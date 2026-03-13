@@ -46,6 +46,11 @@ export interface WebhookMessage {
     button_reply?: { id: string; title: string };
     list_reply?: { id: string; title: string; description?: string };
   };
+  contacts?: Array<{
+    name?: { formatted_name?: string; first_name?: string; last_name?: string };
+    phones?: Array<{ phone: string; type?: string }>;
+    emails?: Array<{ email: string; type?: string }>;
+  }>;
   context?: { from: string; id: string };
   reaction?: { message_id: string; emoji: string };
   sticker?: WebhookMedia;

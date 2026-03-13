@@ -2,6 +2,7 @@ import { Conversation, IConversation } from '../models/Conversation';
 import { Message } from '../models/Message';
 import { User } from '../models/User';
 import { getIO } from '../config/socket';
+import { whatsappService } from './whatsapp.service';
 import { logger } from '../utils/logger';
 import { Types } from 'mongoose';
 
@@ -10,6 +11,7 @@ class ConversationService {
     status?: string;
     assignedTo?: string;
     search?: string;
+    tag?: string;
     page?: number;
     limit?: number;
   }) {
@@ -20,6 +22,7 @@ class ConversationService {
     } else if (filters.assignedTo) {
       query.assignedTo = filters.assignedTo;
     }
+    if (filters.tag) query.tags = filters.tag;
 
     const page = filters.page || 1;
     const limit = filters.limit || 50;
@@ -113,6 +116,31 @@ class ConversationService {
 
   async markRead(conversationId: string) {
     await Conversation.findByIdAndUpdate(conversationId, { unreadCount: 0 });
+
+    // Send read receipts to WhatsApp for recent unread inbound messages
+    try {
+      const unreadMessages = await Message.find({
+        conversation: conversationId,
+        direction: 'inbound',
+        status: { $ne: 'read' },
+        waMessageId: { $exists: true, $ne: null },
+      })
+        .sort({ timestamp: -1 })
+        .limit(20);
+
+      for (const msg of unreadMessages) {
+        try {
+          await whatsappService.markAsRead(msg.waMessageId!);
+          msg.status = 'read' as any;
+          msg.readAt = new Date();
+          await msg.save();
+        } catch {
+          // Silently skip if marking individual message fails
+        }
+      }
+    } catch (err) {
+      logger.warn('Failed to send read receipts:', err);
+    }
   }
 }
 

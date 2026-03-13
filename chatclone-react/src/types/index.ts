@@ -2,6 +2,7 @@
 
 export interface User {
   id: string;
+  _id?: string;
   email: string;
   name: string;
   role: 'admin' | 'agent';
@@ -44,6 +45,19 @@ export interface Conversation {
   updatedAt: string;
 }
 
+export interface MessageReaction {
+  emoji: string;
+  waId?: string;
+  reactedBy?: { _id: string; name: string };
+  reactedAt: string;
+}
+
+export interface ContactCard {
+  name?: { formatted_name?: string; first_name?: string; last_name?: string };
+  phones?: Array<{ phone: string; type?: string }>;
+  emails?: Array<{ email: string; type?: string }>;
+}
+
 export interface Message {
   _id: string;
   conversation: string;
@@ -69,7 +83,16 @@ export interface Message {
   interactive?: {
     type: string;
     body?: { text: string };
-    action?: unknown;
+    header?: { type?: string; text?: string };
+    footer?: { text?: string };
+    action?: {
+      buttons?: Array<{ id: string; title: string }>;
+      button?: string;
+      sections?: Array<{
+        title: string;
+        rows: Array<{ id: string; title: string; description?: string }>;
+      }>;
+    };
     buttonReply?: { id: string; title: string };
     listReply?: { id: string; title: string; description?: string };
   };
@@ -78,6 +101,8 @@ export interface Message {
     language: string;
     components?: Array<Record<string, unknown>>;
   };
+  reactions?: MessageReaction[];
+  contacts?: ContactCard[];
   context?: { messageId: string };
   sentBy?: { _id: string; name: string; avatar?: string };
   sentAt?: string;
@@ -86,6 +111,35 @@ export interface Message {
   failedReason?: string;
   timestamp: string;
   createdAt: string;
+}
+
+export interface Template {
+  name: string;
+  language: string;
+  status: string;
+  category: string;
+  components: Array<{
+    type: string;
+    text?: string;
+    format?: string;
+    buttons?: Array<{ type: string; text: string; url?: string }>;
+  }>;
+}
+
+export interface CannedResponse {
+  _id: string;
+  title: string;
+  shortcut: string;
+  body: string;
+  category?: string;
+  isGlobal: boolean;
+  createdAt: string;
+}
+
+export interface Tag {
+  _id: string;
+  name: string;
+  color: string;
 }
 
 export interface AuthResponse {

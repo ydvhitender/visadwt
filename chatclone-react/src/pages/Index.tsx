@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { Phone, RefreshCw, Radio, Users } from "lucide-react";
+import { Phone, RefreshCw, Radio, Users, BarChart3 } from "lucide-react";
 import ChatSidebar from "@/components/ChatSidebar";
 import ChatPanel from "@/components/ChatPanel";
 import EmptyChatPanel from "@/components/EmptyChatPanel";
 import ContactProfilePanel from "@/components/ContactProfilePanel";
 import SettingsPanel from "@/components/SettingsPanel";
+import Analytics from "@/pages/Analytics";
 import IconSidebar, { type IconTab } from "@/components/IconSidebar";
 import ResizeHandle from "@/components/ResizeHandle";
 import { useSocket } from "@/context/SocketContext";
@@ -14,7 +15,7 @@ import { useMessageUpdaters } from "@/hooks/useMessages";
 import { getConversation } from "@/api/conversations";
 import type { Conversation, Message } from "@/types";
 
-const tabPlaceholders: Record<Exclude<IconTab, "chats" | "settings">, { icon: typeof Phone; title: string; description: string }> = {
+const tabPlaceholders: Record<Exclude<IconTab, "chats" | "settings" | "analytics">, { icon: typeof Phone; title: string; description: string }> = {
   calls: { icon: Phone, title: "Calls", description: "Start making calls to your contacts" },
   status: { icon: RefreshCw, title: "Status", description: "View and share status updates" },
   channels: { icon: Radio, title: "Channels", description: "Find channels to follow" },
@@ -39,7 +40,7 @@ const Index = () => {
   const { socket } = useSocket();
   const { user } = useAuth();
   const { updateConversationInCache } = useConversationUpdaters();
-  const { appendMessage, updateMessageStatus } = useMessageUpdaters(selectedId);
+  const { appendMessage, updateMessageStatus, updateMessageReactions } = useMessageUpdaters(selectedId);
 
   // Conversations query for total unread count (React Query deduplicates)
   const { data: convsData } = useConversations({});
@@ -113,6 +114,20 @@ const Index = () => {
     };
   }, [socket, updateMessageStatus]);
 
+  // ─── Socket.IO: message_reaction ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleReaction = ({ messageId, reactions }: { messageId: string; reactions: any[] }) => {
+      updateMessageReactions(messageId, reactions);
+    };
+
+    socket.on("message_reaction", handleReaction);
+    return () => {
+      socket.off("message_reaction", handleReaction);
+    };
+  }, [socket, updateMessageReactions]);
+
   const handleSelectConversation = useCallback((id: string) => {
     setSelectedId(id);
     setProfileOpen(false);
@@ -128,67 +143,76 @@ const Index = () => {
         userName={user?.name ?? ""}
       />
 
-      {/* Side panel — switches based on active tab */}
-      <div className="shrink-0 border-r border-border" style={{ width: sidebarWidth }}>
-        {activeTab === "chats" ? (
-          <ChatSidebar
-            selectedConversationId={selectedId}
-            onSelectConversation={handleSelectConversation}
-          />
-        ) : activeTab === "settings" ? (
-          <SettingsPanel />
-        ) : (
-          (() => {
-            const info = tabPlaceholders[activeTab];
-            const Icon = info.icon;
-            return (
-              <div className="flex h-full flex-col bg-card">
-                <div className="flex h-[60px] items-center px-5">
-                  <h1 className="text-[22px] font-bold text-foreground">{info.title}</h1>
-                </div>
-                <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-secondary">
-                    <Icon size={28} className="text-muted-foreground" />
-                  </div>
-                  <p className="text-center text-sm text-muted-foreground">{info.description}</p>
-                </div>
-              </div>
-            );
-          })()
-        )}
-      </div>
-
-      {/* Resize handle for sidebar */}
-      <ResizeHandle onResize={handleSidebarResize} direction="left" />
-
-      {/* Main panel */}
-      <div className="flex min-w-0 flex-1">
+      {/* Analytics takes the full area after icon sidebar */}
+      {activeTab === "analytics" ? (
         <div className="flex min-w-0 flex-1 flex-col">
-          {activeTab === "chats" && selectedConversation ? (
-            <ChatPanel
-              conversation={selectedConversation}
-              onToggleProfile={() => setProfileOpen((v) => !v)}
-              isProfileOpen={profileOpen}
-            />
-          ) : (
-            <EmptyChatPanel />
-          )}
+          <Analytics />
         </div>
-
-        {/* Contact profile panel */}
-        {profileOpen && selectedConversation && (
-          <>
-            {/* Resize handle for profile panel */}
-            <ResizeHandle onResize={handleProfileResize} direction="right" />
-            <div className="shrink-0" style={{ width: profileWidth }}>
-              <ContactProfilePanel
-                conversation={selectedConversation}
-                onClose={() => setProfileOpen(false)}
+      ) : (
+        <>
+          {/* Side panel — switches based on active tab */}
+          <div className="shrink-0 border-r border-border" style={{ width: sidebarWidth }}>
+            {activeTab === "chats" ? (
+              <ChatSidebar
+                selectedConversationId={selectedId}
+                onSelectConversation={handleSelectConversation}
               />
+            ) : activeTab === "settings" ? (
+              <SettingsPanel />
+            ) : (
+              (() => {
+                const info = tabPlaceholders[activeTab as keyof typeof tabPlaceholders];
+                const Icon = info.icon;
+                return (
+                  <div className="flex h-full flex-col bg-card">
+                    <div className="flex h-[60px] items-center px-5">
+                      <h1 className="text-[22px] font-bold text-foreground">{info.title}</h1>
+                    </div>
+                    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-secondary">
+                        <Icon size={28} className="text-muted-foreground" />
+                      </div>
+                      <p className="text-center text-sm text-muted-foreground">{info.description}</p>
+                    </div>
+                  </div>
+                );
+              })()
+            )}
+          </div>
+
+          {/* Resize handle for sidebar */}
+          <ResizeHandle onResize={handleSidebarResize} direction="left" />
+
+          {/* Main panel */}
+          <div className="flex min-w-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col">
+              {activeTab === "chats" && selectedConversation ? (
+                <ChatPanel
+                  conversation={selectedConversation}
+                  onToggleProfile={() => setProfileOpen((v) => !v)}
+                  isProfileOpen={profileOpen}
+                />
+              ) : (
+                <EmptyChatPanel />
+              )}
             </div>
-          </>
-        )}
-      </div>
+
+            {/* Contact profile panel */}
+            {profileOpen && selectedConversation && (
+              <>
+                {/* Resize handle for profile panel */}
+                <ResizeHandle onResize={handleProfileResize} direction="right" />
+                <div className="shrink-0" style={{ width: profileWidth }}>
+                  <ContactProfilePanel
+                    conversation={selectedConversation}
+                    onClose={() => setProfileOpen(false)}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 };

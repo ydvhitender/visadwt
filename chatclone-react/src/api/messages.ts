@@ -49,3 +49,13 @@ export async function getUsers() {
   const { data } = await api.get('/users');
   return data;
 }
+
+export async function sendReaction(messageId: string, emoji: string) {
+  const { data } = await api.post('/messages/react', { messageId, emoji });
+  return data;
+}
+
+export async function getMediaUrl(mediaId: string) {
+  const { data } = await api.get('/media/url', { params: { mediaId } });
+  return data as { url: string };
+}

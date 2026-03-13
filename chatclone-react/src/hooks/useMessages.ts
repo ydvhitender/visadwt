@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getMessages } from '@/api/conversations';
-import type { Message } from '@/types';
+import type { Message, MessageReaction } from '@/types';
 
 export const messagesKey = (conversationId: string) =>
   ['messages', conversationId] as const;
@@ -48,10 +48,26 @@ export function useMessageUpdaters(conversationId: string | null) {
     );
   };
 
+  const updateMessageReactions = (messageId: string, reactions: MessageReaction[]) => {
+    if (!conversationId) return;
+    qc.setQueryData<{ messages: Message[]; total: number }>(
+      messagesKey(conversationId),
+      (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          messages: old.messages.map((m) =>
+            m._id === messageId ? { ...m, reactions } : m,
+          ),
+        };
+      },
+    );
+  };
+
   const invalidateMessages = () => {
     if (!conversationId) return;
     qc.invalidateQueries({ queryKey: messagesKey(conversationId) });
   };
 
-  return { appendMessage, updateMessageStatus, invalidateMessages };
+  return { appendMessage, updateMessageStatus, updateMessageReactions, invalidateMessages };
 }

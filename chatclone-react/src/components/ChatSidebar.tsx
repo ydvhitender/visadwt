@@ -198,6 +198,22 @@ export default function ChatSidebar({ selectedConversationId, onSelectConversati
                     )}
                   </div>
                 </div>
+                {/* Tag chips */}
+                {conv.tags && conv.tags.length > 0 && (
+                  <div className="mt-0.5 flex flex-wrap gap-1">
+                    {conv.tags.slice(0, 3).map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-primary/10 px-1.5 py-[1px] text-[10px] font-medium text-primary"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                    {conv.tags.length > 3 && (
+                      <span className="text-[10px] text-muted-foreground">+{conv.tags.length - 3}</span>
+                    )}
+                  </div>
+                )}
               </div>
             </button>
           );

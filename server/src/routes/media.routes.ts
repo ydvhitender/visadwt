@@ -13,5 +13,6 @@ const router = Router();
 router.use(authMiddleware);
 
 router.post('/upload', upload.single('file'), mediaController.upload);
+router.get('/url', mediaController.getUrl);
 
 export default router;

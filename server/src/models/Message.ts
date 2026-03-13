@@ -7,6 +7,19 @@ export type MessageType =
   | 'location' | 'contacts' | 'interactive' | 'template'
   | 'reaction' | 'sticker';
 
+export interface IReaction {
+  emoji: string;
+  waId?: string;
+  reactedBy?: Types.ObjectId;
+  reactedAt: Date;
+}
+
+export interface IContactCard {
+  name?: { formatted_name?: string; first_name?: string; last_name?: string };
+  phones?: Array<{ phone: string; type?: string }>;
+  emails?: Array<{ email: string; type?: string }>;
+}
+
 export interface IMessage extends Document {
   conversation: Types.ObjectId;
   contact: Types.ObjectId;
@@ -43,6 +56,8 @@ export interface IMessage extends Document {
     language: string;
     components?: Array<Record<string, unknown>>;
   };
+  reactions?: IReaction[];
+  contacts?: IContactCard[];
   context?: { messageId: string };
   sentBy?: Types.ObjectId;
   sentAt?: Date;
@@ -100,6 +115,13 @@ const MessageSchema = new Schema<IMessage>(
       language: String,
       components: [Schema.Types.Mixed],
     },
+    reactions: [{
+      emoji: String,
+      waId: String,
+      reactedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+      reactedAt: { type: Date, default: Date.now },
+    }],
+    contacts: [Schema.Types.Mixed],
     context: { messageId: String },
     sentBy: { type: Schema.Types.ObjectId, ref: 'User' },
     sentAt: Date,
