@@ -113,8 +113,9 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
       appendMessage(result.message || result);
       setText("");
       setShowQuickReplies(false);
-    } catch (err) {
-      console.error('Failed to send message:', err);
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.error || err.message || 'Failed to send message';
+      console.error('Failed to send message:', errorMsg);
     } finally {
       setSending(false);
     }

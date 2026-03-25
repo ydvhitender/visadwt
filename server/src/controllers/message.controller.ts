@@ -5,6 +5,7 @@ import { Message } from '../models/Message';
 import { Contact } from '../models/Contact';
 import { whatsappService } from '../services/whatsapp.service';
 import { getIO } from '../config/socket';
+import { logger } from '../utils/logger';
 import { Types } from 'mongoose';
 
 export const messageController = {
@@ -16,6 +17,7 @@ export const messageController = {
       });
       res.json(result);
     } catch (error: any) {
+      logger.error('Message send error', { message: error.message, stack: error.stack, body: req.body });
       res.status(400).json({ error: error.message });
     }
   },
