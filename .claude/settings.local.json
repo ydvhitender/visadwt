@@ -27,8 +27,7 @@
       "Bash(git status:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)",
-      "Bash(npx tsc:*)"
+      "Bash(git push:*)"
     ]
   }
 }

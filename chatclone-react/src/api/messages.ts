@@ -34,9 +34,7 @@ export async function sendMessage(params: SendMessageParams) {
 export async function uploadMedia(file: File) {
   const formData = new FormData();
   formData.append('file', file);
-  const { data } = await api.post('/media/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const { data } = await api.post('/media/upload', formData);
   return data as { mediaId: string; filename: string; mimeType: string };
 }
 

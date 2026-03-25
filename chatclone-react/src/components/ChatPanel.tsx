@@ -6,7 +6,7 @@ import {
   LayoutTemplate,
 } from "lucide-react";
 import { useMessages, useMessageUpdaters } from "@/hooks/useMessages";
-import { sendMessage, uploadMedia, sendReaction, getTemplates } from "@/api/messages";
+import { sendMessage, uploadMedia, sendReaction, getTemplates, getMediaUrl } from "@/api/messages";
 import { getCannedResponses } from "@/api/cannedResponses";
 import { markConversationRead, assignConversation } from "@/api/conversations";
 import { getTags, updateConversationTags } from "@/api/tags";
@@ -42,6 +42,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
   const [allTags, setAllTags] = useState<TagType[]>([]);
   const [showAssignDropdown, setShowAssignDropdown] = useState(false);
   const [agents, setAgents] = useState<any[]>([]);
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -72,6 +73,31 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
       markConversationRead(conversation._id).catch(() => {});
     }
   }, [conversation._id, conversation.unreadCount]);
+
+  // Fetch media URLs for messages with mediaId
+  useEffect(() => {
+    const fetchMediaUrls = async () => {
+      const messagesNeedingUrls = messages.filter(
+        msg => msg.media?.mediaId && !msg.media?.url && !mediaUrls[msg.media.mediaId]
+      );
+
+      if (messagesNeedingUrls.length === 0) return;
+
+      const newUrls: Record<string, string> = { ...mediaUrls };
+      for (const msg of messagesNeedingUrls) {
+        if (!msg.media?.mediaId) continue;
+        try {
+          const result = await getMediaUrl(msg.media.mediaId);
+          newUrls[msg.media.mediaId] = result.url;
+        } catch {
+          // Silently fail
+        }
+      }
+      setMediaUrls(newUrls);
+    };
+
+    fetchMediaUrls();
+  }, [messages, mediaUrls]);
 
   // ─── Send text message ──────────────────────────────────────
   const handleSend = useCallback(async () => {
@@ -216,16 +242,24 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
 
   // ─── Render message content based on type ──────────────────────────────────────
   const renderMessageContent = useCallback((msg: Message) => {
+    const getMediaUrl = (media: Message["media"]) => {
+      if (!media) return null;
+      return media.url || mediaUrls[media.mediaId ?? ""] || null;
+    };
+
     switch (msg.type) {
       case "image":
         return (
           <div>
-            {msg.media?.url && (
+            {msg.media && (
               <img
-                src={msg.media.url}
+                src={getMediaUrl(msg.media) || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23e5e7eb' width='200' height='200'/%3E%3Ctext x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='system-ui' font-size='14' fill='%236b7280'%3ELoading...%3C/text%3E%3C/svg%3E"}
                 alt={msg.media.filename || "image"}
                 className="mb-1 max-h-72 w-full cursor-pointer rounded object-cover"
-                onClick={() => setLightboxUrl(msg.media!.url!)}
+                onClick={() => {
+                  const url = getMediaUrl(msg.media);
+                  if (url) setLightboxUrl(url);
+                }}
               />
             )}
             {(msg.media?.caption || msg.text?.body) && (
@@ -239,13 +273,13 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
       case "video":
         return (
           <div>
-            {msg.media?.url ? (
+            {msg.media?.url || mediaUrls[msg.media?.mediaId ?? ""] ? (
               <video
                 controls
                 className="mb-1 max-h-72 w-full rounded"
                 preload="metadata"
               >
-                <source src={msg.media.url} type={msg.media.mimeType || "video/mp4"} />
+                <source src={getMediaUrl(msg.media) || ""} type={msg.media.mimeType || "video/mp4"} />
               </video>
             ) : (
               <div className="mb-1 flex items-center gap-2 rounded bg-muted/50 px-3 py-2">
@@ -262,9 +296,9 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
       case "audio":
         return (
           <div className="min-w-[240px]">
-            {msg.media?.url ? (
+            {msg.media?.url || mediaUrls[msg.media?.mediaId ?? ""] ? (
               <audio controls className="w-full" preload="metadata">
-                <source src={msg.media.url} type={msg.media.mimeType || "audio/ogg"} />
+                <source src={getMediaUrl(msg.media) || ""} type={msg.media.mimeType || "audio/ogg"} />
               </audio>
             ) : (
               <div className="flex items-center gap-2 rounded bg-muted/50 px-3 py-2">
@@ -278,7 +312,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
       case "document":
         return (
           <a
-            href={msg.media?.url || "#"}
+            href={getMediaUrl(msg.media) || "#"}
             target="_blank"
             rel="noopener noreferrer"
             className="mb-1 flex items-center gap-3 rounded-lg bg-muted/30 px-3 py-2.5 transition-colors hover:bg-muted/50"
@@ -301,9 +335,9 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
       case "sticker":
         return (
           <div className="p-1">
-            {msg.media?.url ? (
+            {msg.media?.url || mediaUrls[msg.media?.mediaId ?? ""] ? (
               <img
-                src={msg.media.url}
+                src={getMediaUrl(msg.media) || ""}
                 alt="sticker"
                 className="h-32 w-32 object-contain"
               />
@@ -428,7 +462,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
         ) : null;
       }
     }
-  }, []);
+  }, [mediaUrls]);
 
   const isSticker = (msg: Message) => msg.type === "sticker";
 
