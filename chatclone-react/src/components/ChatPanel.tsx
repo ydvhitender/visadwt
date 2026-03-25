@@ -114,8 +114,15 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
       setText("");
       setShowQuickReplies(false);
     } catch (err: any) {
-      const errorMsg = err.response?.data?.error || err.message || 'Failed to send message';
-      console.error('Failed to send message:', errorMsg);
+      const errorMsg = err.response?.data?.error ||
+                       err.response?.data?.message ||
+                       err.response?.data?.details ||
+                       JSON.stringify(err.response?.data) ||
+                       err.message ||
+                       'Failed to send message';
+      console.error('Failed to send message - Status:', err.response?.status);
+      console.error('Response data:', err.response?.data);
+      console.error('Error:', errorMsg);
     } finally {
       setSending(false);
     }
@@ -137,8 +144,10 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
           type, mediaId, mimeType, filename,
         });
         appendMessage(result.message || result);
-      } catch {}
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      } catch (err: any) {
+        console.error('File upload error:', err.response?.data || err.message);
+      }
+      e.target.value = "";
     },
     [conversation._id, appendMessage],
   );
