@@ -97,7 +97,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
     };
 
     fetchMediaUrls();
-  }, [messages, mediaUrls]);
+  }, [messages]);
 
   // ─── Send text message ──────────────────────────────────────
   const handleSend = useCallback(async () => {
@@ -113,7 +113,8 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
       appendMessage(result.message || result);
       setText("");
       setShowQuickReplies(false);
-    } catch {
+    } catch (err) {
+      console.error('Failed to send message:', err);
     } finally {
       setSending(false);
     }
