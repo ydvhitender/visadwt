@@ -1,12 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Search, MoreVertical, Phone, Video, Smile, Paperclip, Mic, Send, Lock,
   ChevronDown, Check, CheckCheck, Loader2, FileText, AlertCircle,
   Download, Play, MapPin, User as UserIcon, Zap, Tag, X,
-  LayoutTemplate,
+  LayoutTemplate, Reply, Pin, Copy, Trash2, Clock,
 } from "lucide-react";
 import { useMessages, useMessageUpdaters } from "@/hooks/useMessages";
-import { sendMessage, uploadMedia, sendReaction, getTemplates, getMediaUrl } from "@/api/messages";
+import { sendMessage, uploadMedia, sendReaction, getTemplates, getMediaUrl, togglePinMessage, deleteMessageForMe, deleteMessageForEveryone } from "@/api/messages";
 import { getCannedResponses } from "@/api/cannedResponses";
 import { markConversationRead, assignConversation } from "@/api/conversations";
 import { getTags, updateConversationTags } from "@/api/tags";
@@ -19,6 +19,7 @@ interface ChatPanelProps {
   conversation: Conversation;
   onToggleProfile?: () => void;
   isProfileOpen?: boolean;
+  onConversationUpdate?: (conversation: Conversation) => void;
 }
 
 function isDifferentDay(a: string, b: string) {
@@ -28,10 +29,13 @@ function isDifferentDay(a: string, b: string) {
 // Quick emoji reaction options
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
-export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen }: ChatPanelProps) {
+export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen, onConversationUpdate }: ChatPanelProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [docViewer, setDocViewer] = useState<{ url: string; filename: string; mimeType: string } | null>(null);
+  const [showMsgMenu, setShowMsgMenu] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ msgId: string; type: "me" | "everyone" } | null>(null);
   const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [cannedResponses, setCannedResponses] = useState<CannedResponse[]>([]);
@@ -43,11 +47,28 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
   const [showAssignDropdown, setShowAssignDropdown] = useState(false);
   const [agents, setAgents] = useState<any[]>([]);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
+  const [mediaPreview, setMediaPreview] = useState<{
+    file: File;
+    previewUrl: string;
+    type: "image" | "video" | "audio" | "document";
+  } | null>(null);
+  const [mediaCaption, setMediaCaption] = useState("");
+  const [mediaSending, setMediaSending] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState<"idle" | "uploading" | "sending">("idle");
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [chatSearch, setChatSearch] = useState("");
+  const [showChatSearch, setShowChatSearch] = useState(false);
+  const [chatSearchIndex, setChatSearchIndex] = useState(0);
+  const chatSearchRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const assignRef = useRef<HTMLDivElement>(null);
+  const tagRef = useRef<HTMLDivElement>(null);
 
   const { data, isLoading } = useMessages(conversation._id);
-  const { appendMessage } = useMessageUpdaters(conversation._id);
+  const { appendMessage, updateMessagePin, removeMessage, invalidateMessages } = useMessageUpdaters(conversation._id);
   const { user } = useAuth();
 
   const messages = data?.messages ?? [];
@@ -56,8 +77,11 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
   const avatar = initials(contactName);
   const color = avatarColor(conversation.contact._id);
 
+  const prevMsgCount = useRef(0);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const isNewMessage = prevMsgCount.current > 0 && messages.length > prevMsgCount.current;
+    messagesEndRef.current?.scrollIntoView({ behavior: isNewMessage ? "smooth" : "instant" });
+    prevMsgCount.current = messages.length;
   }, [messages.length]);
 
   useEffect(() => {
@@ -70,9 +94,46 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
 
   useEffect(() => {
     if (conversation.unreadCount > 0) {
-      markConversationRead(conversation._id).catch(() => {});
+      markConversationRead(conversation._id).then(() => {
+        onConversationUpdate?.({ ...conversation, unreadCount: 0 });
+      }).catch(() => {});
     }
   }, [conversation._id, conversation.unreadCount]);
+
+  // Close assign/tag/msg dropdowns on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (showAssignDropdown && assignRef.current && !assignRef.current.contains(e.target as Node)) {
+        setShowAssignDropdown(false);
+      }
+      if (showTagManager && tagRef.current && !tagRef.current.contains(e.target as Node)) {
+        setShowTagManager(false);
+      }
+      if (showMsgMenu) {
+        setShowMsgMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showAssignDropdown, showTagManager]);
+
+  // Scroll to search match
+  const searchMatches = useMemo(() => {
+    if (!chatSearch) return [];
+    const term = chatSearch.toLowerCase();
+    return messages.filter(m =>
+      m.text?.body?.toLowerCase().includes(term) ||
+      m.media?.caption?.toLowerCase().includes(term)
+    );
+  }, [chatSearch, messages]);
+
+  useEffect(() => {
+    if (searchMatches.length > 0 && chatSearchIndex < searchMatches.length) {
+      const msgId = searchMatches[chatSearchIndex]._id;
+      const el = document.getElementById(`msg-${msgId}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [chatSearchIndex, searchMatches]);
 
   // Fetch media URLs for messages with mediaId
   useEffect(() => {
@@ -109,9 +170,11 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
         conversationId: conversation._id,
         type: "text",
         text: body,
+        replyToMessageId: replyTo?._id,
       });
       appendMessage(result.message || result);
       setText("");
+      setReplyTo(null);
       setShowQuickReplies(false);
     } catch (err: any) {
       const errorMsg = err.response?.data?.error ||
@@ -128,29 +191,62 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
     }
   }, [text, sending, conversation._id, appendMessage]);
 
-  // ─── File upload ──────────────────────────────────────
+  // ─── File select → show preview ──────────────────────────────────────
   const handleFileSelect = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      try {
-        const { mediaId, mimeType, filename } = await uploadMedia(file);
-        const type = mimeType.startsWith("image/") ? "image"
-          : mimeType.startsWith("video/") ? "video"
-          : mimeType.startsWith("audio/") ? "audio"
-          : "document";
-        const result = await sendMessage({
-          conversationId: conversation._id,
-          type, mediaId, mimeType, filename,
-        });
-        appendMessage(result.message || result);
-      } catch (err: any) {
-        console.error('File upload error:', err.response?.data || err.message);
-      }
+      const type = file.type.startsWith("image/") ? "image" as const
+        : file.type.startsWith("video/") ? "video" as const
+        : file.type.startsWith("audio/") ? "audio" as const
+        : "document" as const;
+      const previewUrl = type === "image" || type === "video" ? URL.createObjectURL(file) : "";
+      setMediaPreview({ file, previewUrl, type });
+      setMediaCaption("");
       e.target.value = "";
     },
-    [conversation._id, appendMessage],
+    [],
   );
+
+  // ─── Send media after preview ──────────────────────────────────────
+  const handleMediaSend = useCallback(async () => {
+    if (!mediaPreview || mediaSending) return;
+    setMediaSending(true);
+    setUploadProgress(0);
+    setUploadStage("uploading");
+    try {
+      const { mediaId, mimeType, filename } = await uploadMedia(
+        mediaPreview.file,
+        (percent) => setUploadProgress(percent)
+      );
+      setUploadStage("sending");
+      setUploadProgress(100);
+      const result = await sendMessage({
+        conversationId: conversation._id,
+        type: mediaPreview.type,
+        mediaId, mimeType, filename,
+        caption: mediaCaption.trim() || undefined,
+        replyToMessageId: replyTo?._id,
+      });
+      appendMessage(result.message || result);
+      if (mediaPreview.previewUrl) URL.revokeObjectURL(mediaPreview.previewUrl);
+      setMediaPreview(null);
+      setMediaCaption("");
+      setReplyTo(null);
+    } catch (err: any) {
+      console.error('File upload error:', err.response?.data || err.message);
+    } finally {
+      setMediaSending(false);
+      setUploadStage("idle");
+      setUploadProgress(0);
+    }
+  }, [mediaPreview, mediaSending, mediaCaption, conversation._id, appendMessage]);
+
+  const cancelMediaPreview = useCallback(() => {
+    if (mediaPreview?.previewUrl) URL.revokeObjectURL(mediaPreview.previewUrl);
+    setMediaPreview(null);
+    setMediaCaption("");
+  }, [mediaPreview]);
 
   // ─── Handle reaction ──────────────────────────────────────
   const handleReaction = useCallback(async (messageId: string, emoji: string) => {
@@ -183,7 +279,9 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
       const data = await getTemplates();
       setTemplates(data.data || []);
       setShowTemplatePicker(true);
-    } catch {}
+    } catch (err: any) {
+      console.error("Failed to load templates:", err.response?.data || err.message);
+    }
   }, []);
 
   const sendTemplateMessage = useCallback(async (tmpl: any) => {
@@ -196,44 +294,65 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
       });
       appendMessage(result.message || result);
       setShowTemplatePicker(false);
-    } catch {}
+    } catch (err: any) {
+      console.error("Template send error:", err.response?.data || err.message);
+    }
   }, [conversation._id, appendMessage]);
 
-  // ─── Tag management ──────────────────────────────────────
+  // ─── Tag/Status management (SQL statuses) ──────────────────────────────────────
+  const [sqlStatuses, setSqlStatuses] = useState<{ status: string; count: number }[]>([]);
+
   const openTagManager = useCallback(async () => {
+    if (showTagManager) {
+      setShowTagManager(false);
+      return;
+    }
+    setShowAssignDropdown(false);
     try {
-      const tags = await getTags();
-      setAllTags(tags);
+      // Load SQL statuses + MongoDB tags
+      const [tagsRes, statusRes] = await Promise.all([
+        getTags(),
+        import("@/api/axios").then(m => m.default.get("/sql/statuses")).then(r => r.data),
+      ]);
+      setAllTags(tagsRes);
+      setSqlStatuses(statusRes);
       setShowTagManager(true);
     } catch {}
-  }, []);
+  }, [showTagManager]);
 
   const toggleTag = useCallback(async (tagName: string) => {
     const has = conversation.tags.includes(tagName);
     try {
-      await updateConversationTags(
+      const updated = await updateConversationTags(
         conversation._id,
         has ? undefined : [tagName],
         has ? [tagName] : undefined
       );
+      onConversationUpdate?.(updated);
     } catch {}
-  }, [conversation._id, conversation.tags]);
+  }, [conversation._id, conversation.tags, onConversationUpdate]);
 
   // ─── Agent assignment ──────────────────────────────────────
   const openAssignDropdown = useCallback(async () => {
+    if (showAssignDropdown) {
+      setShowAssignDropdown(false);
+      return;
+    }
+    setShowTagManager(false);
     try {
       const data = await getUsers();
       setAgents(data);
       setShowAssignDropdown(true);
     } catch {}
-  }, []);
+  }, [showAssignDropdown]);
 
   const handleAssign = useCallback(async (agentId: string | null) => {
     try {
-      await assignConversation(conversation._id, agentId);
+      const updated = await assignConversation(conversation._id, agentId);
+      onConversationUpdate?.(updated);
       setShowAssignDropdown(false);
     } catch {}
-  }, [conversation._id]);
+  }, [conversation._id, onConversationUpdate]);
 
   // ─── Status icon ──────────────────────────────────────
   const StatusIcon = useCallback(({ status }: { status: Message["status"] }) => {
@@ -274,7 +393,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
               />
             )}
             {(msg.media?.caption || msg.text?.body) && (
-              <p className="text-[14.2px] leading-[19px] text-foreground">
+              <p className="whitespace-pre-wrap text-[14.2px] leading-[19px] text-foreground">
                 {msg.media?.caption || msg.text?.body}
               </p>
             )}
@@ -299,7 +418,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
               </div>
             )}
             {msg.media?.caption && (
-              <p className="text-[14.2px] leading-[19px] text-foreground">{msg.media.caption}</p>
+              <p className="whitespace-pre-wrap text-[14.2px] leading-[19px] text-foreground">{msg.media.caption}</p>
             )}
           </div>
         );
@@ -320,13 +439,22 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
           </div>
         );
 
-      case "document":
+      case "document": {
+        const docUrl = getMediaUrl(msg.media);
+        const mime = msg.media?.mimeType || "";
+        const canPreview = mime.includes("pdf") || mime.includes("image");
         return (
-          <a
-            href={getMediaUrl(msg.media) || "#"}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mb-1 flex items-center gap-3 rounded-lg bg-muted/30 px-3 py-2.5 transition-colors hover:bg-muted/50"
+          <div
+            className="mb-1 flex items-center gap-3 rounded-lg bg-muted/30 px-3 py-2.5 transition-colors hover:bg-muted/50 cursor-pointer"
+            onClick={() => {
+              if (docUrl) {
+                setDocViewer({
+                  url: docUrl,
+                  filename: msg.media?.filename || "Document",
+                  mimeType: mime,
+                });
+              }
+            }}
           >
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
               <FileText size={20} className="text-primary" />
@@ -336,12 +464,13 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
                 {msg.media?.filename || "Document"}
               </p>
               <p className="text-xs text-muted-foreground">
-                {msg.media?.mimeType || "file"}
+                {mime || "file"}
               </p>
             </div>
             <Download size={18} className="shrink-0 text-muted-foreground" />
-          </a>
+          </div>
         );
+      }
 
       case "sticker":
         return (
@@ -460,7 +589,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
               </p>
             </div>
             {msg.text?.body && (
-              <p className="text-[14.2px] leading-[19px] text-foreground">{msg.text.body}</p>
+              <p className="whitespace-pre-wrap text-[14.2px] leading-[19px] text-foreground">{msg.text.body}</p>
             )}
           </div>
         );
@@ -469,7 +598,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
         // Plain text
         const body = msg.text?.body || msg.media?.caption || "";
         return body ? (
-          <p className="text-[14.2px] leading-[19px] text-foreground">{body}</p>
+          <p className="whitespace-pre-wrap text-[14.2px] leading-[19px] text-foreground">{body}</p>
         ) : null;
       }
     }
@@ -505,7 +634,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
             </div>
           )}
           {/* Assigned agent */}
-          <div className="relative">
+          <div className="relative" ref={assignRef}>
             <button
               className="rounded-full p-2 hover:bg-wa-hover"
               title={conversation.assignedTo ? `Assigned: ${conversation.assignedTo.name}` : "Unassigned"}
@@ -547,43 +676,152 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
               </div>
             )}
           </div>
-          <button className="rounded-full p-2 hover:bg-wa-hover" onClick={openTagManager} title="Tags">
-            <Tag size={20} className="text-wa-icon" />
+          <div className="relative" ref={tagRef}>
+            <button className="rounded-full p-2 hover:bg-wa-hover" onClick={openTagManager} title="Tags">
+              <Tag size={20} className="text-wa-icon" />
+            </button>
+            {showTagManager && (
+              <div className="absolute right-0 top-full z-50 mt-1 w-64 max-h-80 overflow-y-auto rounded-lg border border-border bg-card shadow-lg">
+                <div className="p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-sm font-medium text-foreground">Status / Tags</p>
+                    <button onClick={() => setShowTagManager(false)}>
+                      <X size={16} className="text-muted-foreground" />
+                    </button>
+                  </div>
+                  {/* SQL Statuses */}
+                  {sqlStatuses.length > 0 && (
+                    <>
+                      <p className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">Status</p>
+                      <div className="space-y-0.5 mb-2">
+                        {sqlStatuses.map((s) => (
+                          <button
+                            key={s.status}
+                            onClick={() => toggleTag(s.status)}
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-wa-hover"
+                          >
+                            <div className="h-2.5 w-2.5 rounded-full bg-primary shrink-0" />
+                            <span className="flex-1 text-left">{s.status}</span>
+                            {conversation.tags.includes(s.status) && (
+                              <Check size={14} className="text-primary" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {/* MongoDB Tags */}
+                  {allTags.length > 0 && (
+                    <>
+                      <p className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">Tags</p>
+                      <div className="space-y-0.5">
+                        {allTags.map((tag) => (
+                          <button
+                            key={tag._id}
+                            onClick={() => toggleTag(tag.name)}
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-wa-hover"
+                          >
+                            <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
+                            <span className="flex-1 text-left">{tag.name}</span>
+                            {conversation.tags.includes(tag.name) && (
+                              <Check size={14} className="text-primary" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {sqlStatuses.length === 0 && allTags.length === 0 && (
+                    <p className="text-xs text-muted-foreground py-2">No statuses or tags available</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <button className="rounded-full p-2 hover:bg-wa-hover" onClick={() => { setShowChatSearch(v => !v); setChatSearch(""); setChatSearchIndex(0); }} title="Search in chat">
+            <Search size={20} className="text-wa-icon" />
           </button>
-          <button className="rounded-full p-2 hover:bg-wa-hover"><Video size={20} className="text-wa-icon" /></button>
-          <button className="rounded-full p-2 hover:bg-wa-hover"><Phone size={20} className="text-wa-icon" /></button>
-          <button className="rounded-full p-2 hover:bg-wa-hover"><Search size={20} className="text-wa-icon" /></button>
-          <button className="rounded-full p-2 hover:bg-wa-hover"><MoreVertical size={20} className="text-wa-icon" /></button>
+          <button className="rounded-full p-2 hover:bg-wa-hover" onClick={onToggleProfile} title="Contact info">
+            <MoreVertical size={20} className="text-wa-icon" />
+          </button>
         </div>
       </div>
 
-      {/* Tag manager dropdown */}
-      {showTagManager && (
-        <div className="absolute right-20 top-16 z-50 w-64 rounded-lg border border-border bg-card shadow-lg">
-          <div className="p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm font-medium text-foreground">Tags</p>
-              <button onClick={() => setShowTagManager(false)}>
-                <X size={16} className="text-muted-foreground" />
-              </button>
-            </div>
-            <div className="space-y-1">
-              {allTags.map((tag) => (
+      {/* Chat search bar */}
+      {showChatSearch && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-wa-header px-4 py-2">
+          <div className="flex flex-1 items-center gap-2 rounded-lg bg-wa-compose px-3 py-1.5">
+            <Search size={16} className="shrink-0 text-muted-foreground" />
+            <input
+              ref={chatSearchRef}
+              type="text"
+              placeholder="Search messages..."
+              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              value={chatSearch}
+              onChange={(e) => { setChatSearch(e.target.value); setChatSearchIndex(0); }}
+              autoFocus
+            />
+            {chatSearch && (() => {
+              const matches = messages.filter(m =>
+                m.text?.body?.toLowerCase().includes(chatSearch.toLowerCase()) ||
+                m.media?.caption?.toLowerCase().includes(chatSearch.toLowerCase())
+              );
+              return matches.length > 0 ? (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {chatSearchIndex + 1}/{matches.length}
+                </span>
+              ) : (
+                <span className="shrink-0 text-xs text-muted-foreground">0 results</span>
+              );
+            })()}
+          </div>
+          {chatSearch && (() => {
+            const matches = messages.filter(m =>
+              m.text?.body?.toLowerCase().includes(chatSearch.toLowerCase()) ||
+              m.media?.caption?.toLowerCase().includes(chatSearch.toLowerCase())
+            );
+            return (
+              <div className="flex items-center gap-1">
                 <button
-                  key={tag._id}
-                  onClick={() => toggleTag(tag.name)}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-wa-hover"
+                  onClick={() => setChatSearchIndex(i => i > 0 ? i - 1 : matches.length - 1)}
+                  className="rounded-full p-1 hover:bg-wa-hover"
+                  disabled={matches.length === 0}
                 >
-                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: tag.color }} />
-                  <span className="flex-1 text-left">{tag.name}</span>
-                  {conversation.tags.includes(tag.name) && (
-                    <Check size={14} className="text-primary" />
-                  )}
+                  <ChevronDown size={18} className="rotate-180 text-wa-icon" />
+                </button>
+                <button
+                  onClick={() => setChatSearchIndex(i => i < matches.length - 1 ? i + 1 : 0)}
+                  className="rounded-full p-1 hover:bg-wa-hover"
+                  disabled={matches.length === 0}
+                >
+                  <ChevronDown size={18} className="text-wa-icon" />
+                </button>
+              </div>
+            );
+          })()}
+          <button onClick={() => { setShowChatSearch(false); setChatSearch(""); }} className="rounded-full p-1 hover:bg-wa-hover">
+            <X size={18} className="text-wa-icon" />
+          </button>
+        </div>
+      )}
+
+      {/* Pinned messages bar */}
+      {messages.some(m => m.pinned) && (
+        <div className="shrink-0 border-b border-border bg-wa-header px-4 py-2">
+          <div className="flex items-center gap-2">
+            <Pin size={14} className="text-primary shrink-0" />
+            <div className="flex-1 overflow-x-auto flex gap-2 wa-scrollbar">
+              {messages.filter(m => m.pinned).map(m => (
+                <button
+                  key={m._id}
+                  onClick={() => {
+                    document.getElementById(`msg-${m._id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }}
+                  className="shrink-0 max-w-[200px] truncate rounded bg-background px-2 py-1 text-[11px] text-foreground hover:bg-wa-hover"
+                >
+                  {m.text?.body || m.media?.caption || m.type}
                 </button>
               ))}
-              {allTags.length === 0 && (
-                <p className="text-xs text-muted-foreground py-2">No tags created yet</p>
-              )}
             </div>
           </div>
         </div>
@@ -611,7 +849,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
           const stickerMsg = isSticker(msg);
 
           return (
-            <div key={msg._id}>
+            <div key={msg._id} id={`msg-${msg._id}`}>
               {showDateSep && (
                 <div className="mb-4 mt-2 flex justify-center">
                   <span className="rounded-lg bg-wa-date-chip px-3 py-1 text-[12px] text-muted-foreground shadow-sm">
@@ -622,7 +860,11 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
 
               <div className={`mb-1 flex ${isInbound ? "justify-start" : "justify-end"}`}>
                 <div
-                  className={`group relative max-w-[65%] rounded-lg shadow-sm ${
+                  className={`group relative max-w-[65%] rounded-lg shadow-sm transition-colors duration-300 ${
+                    searchMatches.length > 0 && searchMatches[chatSearchIndex]?._id === msg._id
+                      ? "ring-2 ring-primary ring-offset-1"
+                      : ""
+                  } ${
                     stickerMsg
                       ? "bg-transparent shadow-none"
                       : `px-2.5 pb-1 pt-1.5 ${
@@ -632,7 +874,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
                         }`
                   }`}
                 >
-                  {/* Context menu + reaction trigger */}
+                  {/* Context menu */}
                   <div className="absolute -top-1 right-1 hidden gap-1 group-hover:flex">
                     <button
                       onClick={() => setShowReactionPicker(showReactionPicker === msg._id ? null : msg._id)}
@@ -640,9 +882,74 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
                     >
                       <Smile size={14} className="text-muted-foreground" />
                     </button>
-                    <button className="rounded-full bg-card/90 p-1 shadow-sm hover:bg-card">
-                      <ChevronDown size={14} className="text-muted-foreground" />
-                    </button>
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowMsgMenu(showMsgMenu === msg._id ? null : msg._id)}
+                        className="rounded-full bg-card/90 p-1 shadow-sm hover:bg-card"
+                      >
+                        <ChevronDown size={14} className="text-muted-foreground" />
+                      </button>
+                      {showMsgMenu === msg._id && (
+                        <div className="absolute right-0 top-full z-50 mt-1 w-40 rounded-lg border border-border bg-card shadow-lg py-1">
+                          <button
+                            onClick={() => {
+                              setReplyTo(msg);
+                              textInputRef.current?.focus();
+                              setShowMsgMenu(null);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-wa-hover"
+                          >
+                            <Reply size={14} className="text-muted-foreground" />
+                            Reply
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const res = await togglePinMessage(msg._id);
+                              updateMessagePin(msg._id, res.pinned);
+                              setShowMsgMenu(null);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-wa-hover"
+                          >
+                            <Pin size={14} className={msg.pinned ? "text-primary" : "text-muted-foreground"} />
+                            {msg.pinned ? "Unpin" : "Pin"}
+                          </button>
+                          <button
+                            onClick={() => {
+                              const text = msg.text?.body || msg.media?.caption || "";
+                              if (text) navigator.clipboard.writeText(text);
+                              setShowMsgMenu(null);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-wa-hover"
+                          >
+                            <Copy size={14} className="text-muted-foreground" />
+                            Copy
+                          </button>
+                          <div className="my-0.5 border-t border-border" />
+                          <button
+                            onClick={() => {
+                              setDeleteConfirm({ msgId: msg._id, type: "me" });
+                              setShowMsgMenu(null);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-wa-hover text-destructive"
+                          >
+                            <Trash2 size={14} />
+                            Delete for me
+                          </button>
+                          {msg.direction === "outbound" && (
+                            <button
+                              onClick={() => {
+                                setDeleteConfirm({ msgId: msg._id, type: "everyone" });
+                                setShowMsgMenu(null);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-wa-hover text-destructive"
+                            >
+                              <Trash2 size={14} />
+                              Delete for everyone
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Reaction picker */}
@@ -659,6 +966,26 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
                       ))}
                     </div>
                   )}
+
+                  {/* Quoted reply */}
+                  {msg.context?.messageId && (() => {
+                    const quoted = messages.find((m) => m._id === msg.context!.messageId || m.waMessageId === msg.context!.messageId);
+                    if (!quoted) return null;
+                    const quotedIsInbound = quoted.direction === "inbound";
+                    const quotedText = quoted.text?.body || quoted.media?.caption || quoted.type || "";
+                    return (
+                      <div className={`mb-1 rounded-md px-2.5 py-1.5 border-l-4 cursor-pointer ${
+                        quotedIsInbound
+                          ? "bg-black/5 border-l-primary dark:bg-white/5"
+                          : "bg-black/5 border-l-green-500 dark:bg-white/5"
+                      }`}>
+                        <p className={`text-[11px] font-semibold ${quotedIsInbound ? "text-primary" : "text-green-600"}`}>
+                          {quotedIsInbound ? contactName : "You"}
+                        </p>
+                        <p className="text-[12px] text-muted-foreground line-clamp-2">{quotedText}</p>
+                      </div>
+                    );
+                  })()}
 
                   {/* Message content */}
                   {renderMessageContent(msg)}
@@ -709,7 +1036,7 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
               className="flex w-full flex-col gap-0.5 border-b border-border/50 px-3 py-2 text-left hover:bg-wa-hover last:border-0"
             >
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-primary">/{cr.shortcut}</span>
+                <span className="text-xs font-mono text-primary">{cr.shortcut.startsWith("/") ? cr.shortcut : `/${cr.shortcut}`}</span>
                 <span className="text-sm font-medium text-foreground">{cr.title}</span>
               </div>
               <span className="truncate text-xs text-muted-foreground">{cr.body}</span>
@@ -720,81 +1047,281 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
 
       {/* Template picker modal */}
       {showTemplatePicker && (
-        <div className="mx-4 mb-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-card shadow-lg">
-          <div className="flex items-center justify-between border-b border-border px-3 py-2">
-            <p className="text-sm font-medium text-foreground">Message Templates</p>
-            <button onClick={() => setShowTemplatePicker(false)}>
-              <X size={16} className="text-muted-foreground" />
-            </button>
-          </div>
-          {templates.length === 0 && (
-            <p className="px-3 py-4 text-sm text-muted-foreground">No templates available</p>
-          )}
-          {templates.map((tmpl: any, idx: number) => (
-            <button
-              key={idx}
-              onClick={() => sendTemplateMessage(tmpl)}
-              className="flex w-full flex-col gap-1 border-b border-border/50 px-3 py-2.5 text-left hover:bg-wa-hover last:border-0"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-foreground">{tmpl.name}</span>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                  tmpl.status === "APPROVED" ? "bg-green-500/10 text-green-600" : "bg-yellow-500/10 text-yellow-600"
-                }`}>
-                  {tmpl.status}
-                </span>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50" onClick={() => setShowTemplatePicker(false)}>
+          <div className="w-full max-w-md max-h-[70vh] rounded-lg bg-card shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Message Templates</p>
+                <p className="text-[11px] text-muted-foreground">{templates.length} templates available</p>
               </div>
-              <span className="text-xs text-muted-foreground">{tmpl.language} · {tmpl.category}</span>
-            </button>
-          ))}
+              <button onClick={() => setShowTemplatePicker(false)} className="rounded-full p-1.5 hover:bg-wa-hover">
+                <X size={18} className="text-muted-foreground" />
+              </button>
+            </div>
+            <div className="overflow-y-auto max-h-[calc(70vh-60px)]">
+              {templates.length === 0 && (
+                <p className="px-4 py-8 text-center text-sm text-muted-foreground">No templates available</p>
+              )}
+              {templates.map((tmpl: any, idx: number) => {
+                const bodyComp = tmpl.components?.find((c: any) => c.type === "BODY");
+                const headerComp = tmpl.components?.find((c: any) => c.type === "HEADER");
+                const footerComp = tmpl.components?.find((c: any) => c.type === "FOOTER");
+                const isApproved = tmpl.status === "APPROVED";
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => { if (isApproved) sendTemplateMessage(tmpl); }}
+                    disabled={!isApproved}
+                    className={`flex w-full flex-col gap-1.5 border-b border-border/50 px-4 py-3 text-left last:border-0 ${
+                      isApproved ? "hover:bg-wa-hover cursor-pointer" : "opacity-50 cursor-not-allowed"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <LayoutTemplate size={14} className="text-primary shrink-0" />
+                      <span className="text-sm font-medium text-foreground">{tmpl.name}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                        isApproved ? "bg-green-500/10 text-green-600" : tmpl.status === "REJECTED" ? "bg-red-500/10 text-red-600" : "bg-yellow-500/10 text-yellow-600"
+                      }`}>
+                        {tmpl.status}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">{tmpl.language} · {tmpl.category}</span>
+                    </div>
+                    {headerComp?.text && (
+                      <p className="text-xs font-semibold text-foreground ml-5">{headerComp.text}</p>
+                    )}
+                    {bodyComp?.text && (
+                      <p className="text-xs text-muted-foreground ml-5">{bodyComp.text}</p>
+                    )}
+                    {footerComp?.text && (
+                      <p className="text-[10px] text-muted-foreground/70 ml-5">{footerComp.text}</p>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Compose area */}
-      <div className="flex shrink-0 items-center gap-2 bg-wa-header px-4 py-2">
-        <button className="rounded-full p-2 hover:bg-wa-hover">
-          <Smile size={24} className="text-wa-icon" />
-        </button>
-        <button className="rounded-full p-2 hover:bg-wa-hover" onClick={() => fileInputRef.current?.click()}>
-          <Paperclip size={24} className="text-wa-icon" />
-        </button>
-        <button className="rounded-full p-2 hover:bg-wa-hover" onClick={openTemplatePicker} title="Templates">
-          <LayoutTemplate size={24} className="text-wa-icon" />
-        </button>
-        <button
-          className="rounded-full p-2 hover:bg-wa-hover"
-          onClick={() => {
-            getCannedResponses().then(setCannedResponses).catch(() => {});
-            setShowQuickReplies(!showQuickReplies);
-          }}
-          title="Quick replies"
-        >
-          <Zap size={24} className="text-wa-icon" />
-        </button>
-        <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
-        <div className="flex flex-1 items-center rounded-lg bg-wa-compose px-3 py-2">
-          <input
-            type="text"
-            placeholder="Type a message (/ for quick replies)"
-            className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            value={text}
-            onChange={(e) => handleTextChange(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-            disabled={sending}
-          />
-        </div>
-        <button
-          className="rounded-full p-2 hover:bg-wa-hover"
-          onClick={text.trim() ? handleSend : undefined}
-          disabled={sending}
-        >
-          {text.trim() ? (
-            sending ? <Loader2 size={24} className="animate-spin text-wa-icon" /> : <Send size={24} className="text-wa-icon" />
-          ) : (
-            <Mic size={24} className="text-wa-icon" />
+      {/* Media preview overlay */}
+      {mediaPreview && (
+        <div className="relative flex shrink-0 flex-col bg-wa-panel-bg border-t border-border">
+          {/* Header with close */}
+          <div className="flex items-center justify-between px-4 py-2 bg-wa-header">
+            <button onClick={cancelMediaPreview} className="rounded-full p-1.5 hover:bg-wa-hover">
+              <X size={20} className="text-wa-icon" />
+            </button>
+            <span className="text-sm font-medium text-foreground">
+              {mediaPreview.file.name}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {(mediaPreview.file.size / 1024).toFixed(0)} KB
+            </span>
+          </div>
+
+          {/* Preview content */}
+          <div className="flex items-center justify-center p-6 min-h-[200px] max-h-[350px]">
+            {mediaPreview.type === "image" && (
+              <img
+                src={mediaPreview.previewUrl}
+                alt="Preview"
+                className="max-h-[300px] max-w-full rounded-lg object-contain"
+              />
+            )}
+            {mediaPreview.type === "video" && (
+              <video
+                src={mediaPreview.previewUrl}
+                controls
+                className="max-h-[300px] max-w-full rounded-lg"
+              />
+            )}
+            {mediaPreview.type === "audio" && (
+              <div className="flex flex-col items-center gap-3">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                  <Mic size={32} className="text-primary" />
+                </div>
+                <audio src={mediaPreview.previewUrl} controls />
+                <span className="text-sm text-muted-foreground">{mediaPreview.file.name}</span>
+              </div>
+            )}
+            {mediaPreview.type === "document" && (
+              <div className="flex flex-col items-center gap-3">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                  <FileText size={32} className="text-primary" />
+                </div>
+                <span className="text-sm font-medium text-foreground">{mediaPreview.file.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {(mediaPreview.file.size / 1024).toFixed(0)} KB
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Upload progress */}
+          {mediaSending && (
+            <div className="px-4 py-2 bg-wa-header border-t border-border">
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+                <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                  {uploadStage === "uploading" ? `Uploading ${uploadProgress}%` : "Sending..."}
+                </span>
+              </div>
+            </div>
           )}
-        </button>
-      </div>
+
+          {/* Caption input + send */}
+          <div className="flex items-center gap-2 px-4 py-3 bg-wa-header">
+            <div className="flex flex-1 items-center rounded-lg bg-wa-compose px-3 py-2">
+              <input
+                type="text"
+                placeholder="Add a caption..."
+                className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                value={mediaCaption}
+                onChange={(e) => setMediaCaption(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleMediaSend()}
+                autoFocus
+                disabled={mediaSending}
+              />
+            </div>
+            <button
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-primary hover:bg-primary/90"
+              onClick={handleMediaSend}
+              disabled={mediaSending}
+            >
+              {mediaSending ? (
+                <Loader2 size={20} className="animate-spin text-white" />
+              ) : (
+                <Send size={20} className="text-white" />
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Window status banner */}
+      {!mediaPreview && (
+        <div className={`flex shrink-0 items-center gap-2 px-4 py-1.5 text-[11px] border-t border-border ${
+          conversation.isWithinWindow
+            ? "bg-green-500/10 text-green-700 dark:text-green-400"
+            : "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400"
+        }`}>
+          {conversation.isWithinWindow ? (
+            <>
+              <Clock size={12} />
+              <span>Chat window active{conversation.windowExpiresAt ? (() => {
+                const exp = new Date(conversation.windowExpiresAt);
+                const now = new Date();
+                const diffMs = exp.getTime() - now.getTime();
+                if (diffMs <= 0) return "";
+                const hours = Math.floor(diffMs / 3600000);
+                const mins = Math.floor((diffMs % 3600000) / 60000);
+                return ` — ${hours}h ${mins}m remaining`;
+              })() : ""}</span>
+            </>
+          ) : (
+            <>
+              <Lock size={12} />
+              <span>24h window expired — send a template to re-open conversation</span>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Reply banner */}
+      {replyTo && !mediaPreview && conversation.isWithinWindow && (
+        <div className="flex shrink-0 items-center gap-2 border-t border-border bg-wa-header px-4 py-2">
+          <div className="flex-1 rounded-md bg-background border-l-4 border-l-primary px-3 py-2">
+            <p className="text-[11px] font-semibold text-primary">
+              {replyTo.direction === "inbound" ? contactName : "You"}
+            </p>
+            <p className="text-[12px] text-muted-foreground line-clamp-1">
+              {replyTo.text?.body || replyTo.media?.caption || replyTo.type || ""}
+            </p>
+          </div>
+          <button onClick={() => setReplyTo(null)} className="rounded-full p-1.5 hover:bg-wa-hover">
+            <X size={18} className="text-muted-foreground" />
+          </button>
+        </div>
+      )}
+
+      {/* Compose area — only when window is active */}
+      {conversation.isWithinWindow ? (
+        <div className={`flex shrink-0 items-center gap-2 bg-wa-header px-4 py-2 ${mediaPreview ? "hidden" : ""}`}>
+          <button className="rounded-full p-2 hover:bg-wa-hover" onClick={() => fileInputRef.current?.click()}>
+            <Paperclip size={24} className="text-wa-icon" />
+          </button>
+          <button className="rounded-full p-2 hover:bg-wa-hover" onClick={openTemplatePicker} title="Templates">
+            <LayoutTemplate size={24} className="text-wa-icon" />
+          </button>
+          <button
+            className="rounded-full p-2 hover:bg-wa-hover"
+            onClick={() => {
+              getCannedResponses().then(setCannedResponses).catch(() => {});
+              setShowQuickReplies(!showQuickReplies);
+            }}
+            title="Quick replies"
+          >
+            <Zap size={24} className="text-wa-icon" />
+          </button>
+          <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
+          <div className="flex flex-1 items-center rounded-lg bg-wa-compose px-3 py-2">
+            <textarea
+              ref={textInputRef}
+              rows={1}
+              placeholder="Type a message (/ for quick replies)"
+              className="w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground max-h-[120px]"
+              value={text}
+              onChange={(e) => {
+                handleTextChange(e.target.value);
+                e.target.style.height = "auto";
+                e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              disabled={sending}
+            />
+          </div>
+          <button
+            className="rounded-full p-2 hover:bg-wa-hover"
+            onClick={text.trim() ? handleSend : undefined}
+            disabled={sending}
+          >
+            {text.trim() ? (
+              sending ? <Loader2 size={24} className="animate-spin text-wa-icon" /> : <Send size={24} className="text-wa-icon" />
+            ) : (
+              <Mic size={24} className="text-wa-icon" />
+            )}
+          </button>
+        </div>
+      ) : (
+        /* Locked compose — template only */
+        !mediaPreview && (
+          <div className="flex shrink-0 items-center gap-3 bg-wa-header px-4 py-3">
+            <Lock size={18} className="shrink-0 text-muted-foreground" />
+            <p className="flex-1 text-xs text-muted-foreground">
+              You can only send a template message to start the conversation
+            </p>
+            <button
+              onClick={openTemplatePicker}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:opacity-90"
+            >
+              <LayoutTemplate size={14} />
+              Send Template
+            </button>
+          </div>
+        )
+      )}
 
       {/* Image lightbox */}
       {lightboxUrl && (
@@ -814,6 +1341,120 @@ export default function ChatPanel({ conversation, onToggleProfile, isProfileOpen
             className="max-h-[90vh] max-w-[90vw] object-contain"
             onClick={(e) => e.stopPropagation()}
           />
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50" onClick={() => setDeleteConfirm(null)}>
+          <div className="rounded-lg bg-card p-5 shadow-xl max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-medium text-foreground mb-1">
+              {deleteConfirm.type === "everyone" ? "Delete for everyone?" : "Delete for you?"}
+            </p>
+            <p className="text-xs text-muted-foreground mb-4">
+              {deleteConfirm.type === "everyone"
+                ? "This message will be replaced with \"This message was deleted\" for all participants."
+                : "This message will be removed from this chat. Other participants will still see it."}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="rounded-md px-4 py-2 text-sm text-muted-foreground hover:bg-wa-hover"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    if (deleteConfirm.type === "me") {
+                      await deleteMessageForMe(deleteConfirm.msgId);
+                      removeMessage(deleteConfirm.msgId);
+                    } else {
+                      await deleteMessageForEveryone(deleteConfirm.msgId);
+                      invalidateMessages();
+                    }
+                  } catch {}
+                  setDeleteConfirm(null);
+                }}
+                className="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document viewer popup */}
+      {docViewer && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80"
+          onClick={() => setDocViewer(null)}
+        >
+          <div
+            className="relative flex flex-col bg-card rounded-lg shadow-2xl overflow-hidden"
+            style={{ width: "90vw", height: "90vh", maxWidth: "1000px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 bg-wa-header border-b border-border shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <FileText size={20} className="text-primary shrink-0" />
+                <span className="text-sm font-medium text-foreground truncate">{docViewer.filename}</span>
+                <span className="text-xs text-muted-foreground shrink-0">{docViewer.mimeType}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={docViewer.url}
+                  download={docViewer.filename}
+                  className="rounded-full p-1.5 hover:bg-wa-hover"
+                  title="Download"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Download size={18} className="text-wa-icon" />
+                </a>
+                <button
+                  onClick={() => setDocViewer(null)}
+                  className="rounded-full p-1.5 hover:bg-wa-hover"
+                >
+                  <X size={18} className="text-wa-icon" />
+                </button>
+              </div>
+            </div>
+            {/* Content */}
+            <div className="flex-1 overflow-hidden bg-background">
+              {docViewer.mimeType.includes("pdf") ? (
+                <iframe
+                  src={docViewer.url}
+                  className="w-full h-full border-0"
+                  title={docViewer.filename}
+                />
+              ) : docViewer.mimeType.includes("image") ? (
+                <div className="flex items-center justify-center h-full p-4">
+                  <img
+                    src={docViewer.url}
+                    alt={docViewer.filename}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full gap-4">
+                  <FileText size={64} className="text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">{docViewer.filename}</p>
+                  <p className="text-xs text-muted-foreground">Preview not available for this file type</p>
+                  <a
+                    href={docViewer.url}
+                    download={docViewer.filename}
+                    className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Download size={16} />
+                    Download File
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

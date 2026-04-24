@@ -23,6 +23,7 @@ export const webhookController = {
     res.sendStatus(200);
 
     try {
+      logger.info('Webhook received: ' + JSON.stringify(req.body).substring(0, 500));
       const payload = req.body as WebhookPayload;
       if (payload.object !== 'whatsapp_business_account') return;
 

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { messageService } from '../services/message.service';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { Message } from '../models/Message';
+import { Conversation } from '../models/Conversation';
 import { Contact } from '../models/Contact';
 import { whatsappService } from '../services/whatsapp.service';
 import { getIO } from '../config/socket';
@@ -66,6 +67,102 @@ export const messageController = {
       });
 
       res.json({ success: true, reactions: message.reactions });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  async togglePin(req: AuthRequest, res: Response) {
+    try {
+      const message = await Message.findById(req.params.id);
+      if (!message) return res.status(404).json({ error: 'Message not found' });
+      message.pinned = !message.pinned;
+      await message.save();
+      res.json({ success: true, pinned: message.pinned });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  async deleteForMe(req: AuthRequest, res: Response) {
+    try {
+      const message = await Message.findById(req.params.id);
+      if (!message) return res.status(404).json({ error: 'Message not found' });
+      const conversationId = message.conversation.toString();
+
+      await Message.findByIdAndDelete(req.params.id);
+
+      // Update conversation lastMessage if needed
+      const lastMsg = await Message.findOne({ conversation: conversationId })
+        .sort({ timestamp: -1 });
+      if (lastMsg) {
+        await Conversation.findByIdAndUpdate(conversationId, {
+          lastMessage: {
+            text: lastMsg.text?.body || lastMsg.media?.caption || lastMsg.type || '',
+            timestamp: lastMsg.timestamp,
+            direction: lastMsg.direction,
+          },
+        });
+      }
+
+      const io = getIO();
+      io.to(`conversation:${conversationId}`).emit('message_deleted', {
+        messageId: req.params.id,
+        conversationId,
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  async deleteForEveryone(req: AuthRequest, res: Response) {
+    try {
+      const message = await Message.findById(req.params.id);
+      if (!message) return res.status(404).json({ error: 'Message not found' });
+
+      const conversationId = message.conversation.toString();
+
+      // Mark as deleted using updateOne to properly unset fields
+      await Message.updateOne(
+        { _id: req.params.id },
+        {
+          $set: {
+            type: 'text',
+            text: { body: 'This message was deleted' },
+          },
+          $unset: {
+            media: 1,
+            interactive: 1,
+            template: 1,
+            location: 1,
+            contacts: 1,
+            reactions: 1,
+          },
+        }
+      );
+
+      // Update conversation lastMessage
+      const lastMsg = await Message.findOne({ conversation: conversationId })
+        .sort({ timestamp: -1 });
+      if (lastMsg) {
+        await Conversation.findByIdAndUpdate(conversationId, {
+          lastMessage: {
+            text: lastMsg.text?.body || lastMsg.type || '',
+            timestamp: lastMsg.timestamp,
+            direction: lastMsg.direction,
+          },
+        });
+      }
+
+      const io = getIO();
+      io.emit('message_deleted_everyone', {
+        messageId: req.params.id,
+        conversationId,
+      });
+
+      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

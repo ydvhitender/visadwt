@@ -37,6 +37,8 @@ interface SendOptions {
   templateName?: string;
   templateLanguage?: string;
   templateComponents?: Array<Record<string, unknown>>;
+  // Reply
+  replyToMessageId?: string;
 }
 
 class MessageService {
@@ -51,19 +53,28 @@ class MessageService {
     let waResult: any;
     let previewText = '';
 
+    // Resolve reply context — get the WhatsApp message ID for the reply
+    let replyWaMessageId: string | undefined;
+    if (options.replyToMessageId) {
+      const replyMsg = await Message.findById(options.replyToMessageId);
+      if (replyMsg?.waMessageId) {
+        replyWaMessageId = replyMsg.waMessageId;
+      }
+    }
+
     switch (options.type) {
       case 'text':
-        waResult = await whatsappService.sendText(to, options.text!);
+        waResult = await whatsappService.sendText(to, options.text!, false, replyWaMessageId);
         previewText = options.text!;
         break;
 
       case 'image':
-        waResult = await whatsappService.sendImage(to, options.mediaId || options.mediaUrl!, options.caption);
+        waResult = await whatsappService.sendImage(to, options.mediaId || options.mediaUrl!, options.caption, replyWaMessageId);
         previewText = options.caption || 'Photo';
         break;
 
       case 'video':
-        waResult = await whatsappService.sendVideo(to, options.mediaId || options.mediaUrl!, options.caption);
+        waResult = await whatsappService.sendVideo(to, options.mediaId || options.mediaUrl!, options.caption, replyWaMessageId);
         previewText = options.caption || 'Video';
         break;
 
@@ -72,13 +83,14 @@ class MessageService {
           to,
           options.mediaId || options.mediaUrl!,
           options.filename || 'document',
-          options.caption
+          options.caption,
+          replyWaMessageId
         );
         previewText = options.filename || 'Document';
         break;
 
       case 'audio':
-        waResult = await whatsappService.sendAudio(to, options.mediaId || options.mediaUrl!);
+        waResult = await whatsappService.sendAudio(to, options.mediaId || options.mediaUrl!, replyWaMessageId);
         previewText = 'Audio';
         break;
 
@@ -181,6 +193,9 @@ class MessageService {
           language: options.templateLanguage || 'en',
           components: options.templateComponents,
         },
+      }),
+      ...(options.replyToMessageId && {
+        context: { messageId: options.replyToMessageId },
       }),
     });
 

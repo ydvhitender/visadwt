@@ -64,10 +64,41 @@ export function useMessageUpdaters(conversationId: string | null) {
     );
   };
 
+  const updateMessagePin = (messageId: string, pinned: boolean) => {
+    if (!conversationId) return;
+    qc.setQueryData<{ messages: Message[]; total: number }>(
+      messagesKey(conversationId),
+      (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          messages: old.messages.map((m) =>
+            m._id === messageId ? { ...m, pinned } : m,
+          ),
+        };
+      },
+    );
+  };
+
+  const removeMessage = (messageId: string) => {
+    if (!conversationId) return;
+    qc.setQueryData<{ messages: Message[]; total: number }>(
+      messagesKey(conversationId),
+      (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          messages: old.messages.filter((m) => m._id !== messageId),
+          total: old.total - 1,
+        };
+      },
+    );
+  };
+
   const invalidateMessages = () => {
     if (!conversationId) return;
     qc.invalidateQueries({ queryKey: messagesKey(conversationId) });
   };
 
-  return { appendMessage, updateMessageStatus, updateMessageReactions, invalidateMessages };
+  return { appendMessage, updateMessageStatus, updateMessageReactions, updateMessagePin, removeMessage, invalidateMessages };
 }

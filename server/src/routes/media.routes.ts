@@ -10,8 +10,11 @@ const upload = multer({
 
 const router = Router();
 
-router.use(authMiddleware);
+// Public media proxy — browser tags can't send auth headers
+router.get('/:mediaId', mediaController.proxy);
 
+// Authenticated routes
+router.use(authMiddleware);
 router.post('/upload', upload.single('file'), mediaController.upload);
 router.get('/url', mediaController.getUrl);
 

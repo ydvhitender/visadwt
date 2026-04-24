@@ -9,6 +9,7 @@ export interface User {
   isOnline?: boolean;
   avatar?: string;
   activeConversations?: number;
+  waPhoneNumberId?: string;
 }
 
 export interface Contact {
@@ -41,6 +42,12 @@ export interface Conversation {
   pinned?: boolean;
   muted?: boolean;
   tags: string[];
+  travelCountry?: string;
+  visaCenter?: string;
+  travelPackage?: string;
+  visaType?: string;
+  dependentCount?: number;
+  travelerId?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -109,6 +116,7 @@ export interface Message {
   deliveredAt?: string;
   readAt?: string;
   failedReason?: string;
+  pinned?: boolean;
   timestamp: string;
   createdAt: string;
 }

@@ -27,7 +27,14 @@
       "Bash(git status:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(xargs ls:*)",
+      "Bash(find /home/ubuntu/WAB -name .env* -not -path */node_modules/*)",
+      "Bash(curl -s -X POST \"https://graph.facebook.com/v22.0/1015307211664944/messages\" -H \"Authorization: Bearer EAATlV4uc7aMBQx5DMTlHZAZBtFuRMAUPeOsVBZCPixgdApFPcPCq8lek8FNmm0ATZAqtrgO4ZBhlJFbTnUrqgTf1DI9C3lZBOmiCVq3TjLMgdjJt5oxqc8DAFpk6zFyZCIzT20VBR4uNZCmefNrhuctwkNvJ2Es0zWBiSithRwAsZBkHE7xrRV3YVbK2zq7RvpQEonnBM9HdFrgy4iTICpvtZBLD5ZA9JUv9FECxWmenIZAerhbkZC4qX2udkmI9mrLrgvZC4bT9UPStcZBT9iZAKBmWz4wE\" -H \"Content-Type: application/json\" -d '{:*)",
+      "Bash(curl -s -X POST \"https://graph.facebook.com/v22.0/1015307211664944/messages\" -H \"Authorization: Bearer EAAVgowgzl1UBRBipiXG8vtPf3fM4BMRPWlYh3NiNld8ni9QOQOKp6KJnnPnGwp7A0RdK8aVlZAqm7NOny8gmtmJyx2sjZASANZCLIfILujeiFUHsdJfxmbES64BXjieVxiG6YzuLSJQJ8JUC0HD71SxGHPyalbTYaZAYplNEO9MKzm3weVG3hEPEebTSN1rZAM0MAYSkfAPfk5P8bGSRkoKgnVZBK4ZBYb8PbH5VZC11XzqT8ibvbJwoajT7o1VlOf4VNtj1NytzjJARTbFLflUdqQZDZD\" -H \"Content-Type: application/json\" -d '{:*)",
+      "Bash(pm2 restart:*)",
+      "Read(//etc/nginx/sites-enabled/**)",
+      "Bash(npx vite:*)"
     ]
   }
 }

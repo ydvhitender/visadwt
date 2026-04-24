@@ -1,14 +1,93 @@
-import { useState, useMemo, useEffect } from "react";
-import { Search, MoreVertical, MessageSquarePlus, Loader2, Pin, BellOff, Plus, User } from "lucide-react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Search, MoreVertical, MessageSquarePlus, Loader2, Pin, BellOff, User, ChevronRight } from "lucide-react";
 import { useConversations } from "@/hooks/useConversations";
-import { useAuth } from "@/context/AuthContext";
 import { contactDisplayName, initials, avatarColor, formatSidebarTime, lastMessagePreview } from "@/lib/format";
+import NewChatDialog from "./NewChatDialog";
+import api from "@/api/axios";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+interface FilterPillsProps {
+  filters: { key: string; label: string; count?: number }[];
+  activeFilter: string;
+  onFilterChange: (key: string) => void;
+}
+
+function FilterPills({ filters, activeFilter, onFilterChange }: FilterPillsProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(false);
+
+  const checkOverflow = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) {
+      setShowLeftArrow(el.scrollLeft > 5);
+      setShowRightArrow(el.scrollWidth > el.clientWidth && el.scrollLeft + el.clientWidth < el.scrollWidth - 5);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkOverflow();
+    window.addEventListener("resize", checkOverflow);
+    return () => window.removeEventListener("resize", checkOverflow);
+  }, [checkOverflow, filters]);
+
+  const scroll = (dir: number) => {
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollBy({ left: dir * 150, behavior: "smooth" });
+      setTimeout(checkOverflow, 300);
+    }
+  };
+
+  return (
+    <div className="relative flex items-center px-3 pb-1 pt-0.5">
+      {showLeftArrow && (
+        <button
+          onClick={() => scroll(-1)}
+          className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-wa-header text-muted-foreground hover:bg-wa-hover transition-colors"
+        >
+          <ChevronRight size={14} className="rotate-180" />
+        </button>
+      )}
+      <div
+        ref={scrollRef}
+        className="flex items-center gap-2 overflow-hidden"
+        onScroll={checkOverflow}
+      >
+        {filters.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => onFilterChange(f.key)}
+            className={`flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              activeFilter === f.key
+                ? "bg-wa-filter-active text-primary"
+                : "bg-wa-header text-muted-foreground hover:bg-wa-hover"
+            }`}
+          >
+            {f.label}
+            {f.count != null && f.count > 0 && (
+              <span className="text-[10px] opacity-80">{f.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+      {showRightArrow && (
+        <button
+          onClick={() => scroll(1)}
+          className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-wa-header text-muted-foreground hover:bg-wa-hover transition-colors"
+        >
+          <ChevronRight size={14} />
+        </button>
+      )}
+    </div>
+  );
+}
 
 interface ChatSidebarProps {
   selectedConversationId: string | null;
@@ -18,8 +97,7 @@ interface ChatSidebarProps {
 export default function ChatSidebar({ selectedConversationId, onSelectConversation }: ChatSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<string>("All");
-  const { logout } = useAuth();
-
+  const [newChatDialogOpen, setNewChatDialogOpen] = useState(false);
   // Debounce search
   const [debouncedSearch, setDebouncedSearch] = useState("");
   useEffect(() => {
@@ -30,11 +108,20 @@ export default function ChatSidebar({ selectedConversationId, onSelectConversati
   const queryParams = useMemo(() => {
     const p: Record<string, string | number> = {};
     if (debouncedSearch) p.search = debouncedSearch;
-    if (activeFilter === "Unread") p.status = "open";
     return p;
-  }, [debouncedSearch, activeFilter]);
+  }, [debouncedSearch]);
 
   const { data, isLoading } = useConversations(queryParams);
+
+  // Fetch SQL statuses for filter pills
+  const { data: sqlStatuses } = useQuery({
+    queryKey: ["sqlStatuses"],
+    queryFn: async () => {
+      const { data } = await api.get("/sql/statuses");
+      return data as { status: string; count: number }[];
+    },
+    staleTime: 60000,
+  });
 
   // Compute filter counts from data
   const { unreadCount, filteredConversations } = useMemo(() => {
@@ -45,16 +132,24 @@ export default function ChatSidebar({ selectedConversationId, onSelectConversati
     let list = convs;
     if (activeFilter === "Unread") {
       list = list.filter((c) => c.unreadCount > 0);
+    } else if (activeFilter !== "All") {
+      list = list.filter((c) => c.tags?.includes(activeFilter));
     }
     return { unreadCount: unread, filteredConversations: list };
   }, [data, activeFilter]);
 
-  const filters = [
-    { key: "All", label: "All" },
-    { key: "Unread", label: "Unread", count: unreadCount || undefined },
-    { key: "Favorites", label: "Favourites" },
-    { key: "Groups", label: "Groups" },
-  ];
+  const filters = useMemo(() => {
+    const base = [
+      { key: "All", label: "All" },
+      { key: "Unread", label: "Unread", count: unreadCount || undefined },
+    ];
+    if (sqlStatuses) {
+      for (const s of sqlStatuses) {
+        base.push({ key: s.status, label: s.status, count: s.count });
+      }
+    }
+    return base;
+  }, [sqlStatuses, unreadCount]);
 
   return (
     <div className="flex h-full flex-col bg-card">
@@ -64,6 +159,7 @@ export default function ChatSidebar({ selectedConversationId, onSelectConversati
         <div className="flex items-center gap-1">
           <button
             title="New chat"
+            onClick={() => setNewChatDialogOpen(true)}
             className="flex h-9 w-9 items-center justify-center rounded-full text-wa-icon transition-colors hover:bg-wa-hover"
           >
             <MessageSquarePlus size={20} />
@@ -81,9 +177,6 @@ export default function ChatSidebar({ selectedConversationId, onSelectConversati
               <DropdownMenuItem>New group</DropdownMenuItem>
               <DropdownMenuItem>Starred messages</DropdownMenuItem>
               <DropdownMenuItem>Select chats</DropdownMenuItem>
-              <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
-                Log out
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -108,28 +201,8 @@ export default function ChatSidebar({ selectedConversationId, onSelectConversati
         </div>
       </div>
 
-      {/* Filter pills with counts */}
-      <div className="flex items-center gap-2 px-3 pb-1 pt-0.5">
-        {filters.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => setActiveFilter(f.key)}
-            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              activeFilter === f.key
-                ? "bg-wa-filter-active text-primary"
-                : "bg-wa-header text-muted-foreground hover:bg-wa-hover"
-            }`}
-          >
-            {f.label}
-            {f.count != null && f.count > 0 && (
-              <span className="text-[10px] opacity-80">{f.count}</span>
-            )}
-          </button>
-        ))}
-        <button className="flex h-6 w-6 items-center justify-center rounded-full bg-wa-header text-muted-foreground transition-colors hover:bg-wa-hover">
-          <Plus size={14} />
-        </button>
-      </div>
+      {/* Filter pills with arrow navigation */}
+      <FilterPills filters={filters} activeFilter={activeFilter} onFilterChange={setActiveFilter} />
 
       {/* Chat list */}
       <div className="flex-1 overflow-y-auto wa-scrollbar">
@@ -198,6 +271,22 @@ export default function ChatSidebar({ selectedConversationId, onSelectConversati
                     )}
                   </div>
                 </div>
+                {/* Travel country - visa center */}
+                {(conv.travelCountry || conv.visaCenter) && (
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                    {[conv.travelCountry, conv.visaCenter].filter(Boolean).join(" - ")}
+                    {(conv.travelPackage || conv.visaType || conv.dependentCount) && (
+                      <span>
+                        {" · "}
+                        {[
+                          conv.travelPackage,
+                          conv.visaType,
+                          conv.dependentCount ? `(${conv.dependentCount})` : null,
+                        ].filter(Boolean).join(" · ")}
+                      </span>
+                    )}
+                  </p>
+                )}
                 {/* Tag chips */}
                 {conv.tags && conv.tags.length > 0 && (
                   <div className="mt-0.5 flex flex-wrap gap-1">
@@ -219,6 +308,12 @@ export default function ChatSidebar({ selectedConversationId, onSelectConversati
           );
         })}
       </div>
+
+      <NewChatDialog
+        open={newChatDialogOpen}
+        onOpenChange={setNewChatDialogOpen}
+        onConversationCreated={onSelectConversation}
+      />
     </div>
   );
 }

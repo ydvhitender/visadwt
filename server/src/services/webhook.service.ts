@@ -4,6 +4,7 @@ import { Message, MessageType } from '../models/Message';
 import { getIO } from '../config/socket';
 import { normalizePhone, formatPhone } from '../utils/phone';
 import { whatsappService } from './whatsapp.service';
+import { flowService } from './flow.service';
 import { logger } from '../utils/logger';
 import type { WebhookValue, WebhookMessage, WebhookStatus, WebhookContact } from '../types/webhook.types';
 
@@ -75,16 +76,36 @@ class WebhookService {
         const doc = waMessage.document;
         const mediaSource = doc || media;
         if (mediaSource) {
-          // Resolve media URL from WhatsApp
+          // Resolve media URL from WhatsApp and cache locally
           let mediaUrl: string | undefined;
           try {
             mediaUrl = await whatsappService.getMediaUrl(mediaSource.id);
+            // Download and cache locally
+            const buffer = await whatsappService.downloadMedia(mediaUrl);
+            const fs = await import('fs');
+            const path = await import('path');
+            const uploadsDir = path.default.join(__dirname, '../../uploads');
+            if (!fs.default.existsSync(uploadsDir)) {
+              fs.default.mkdirSync(uploadsDir, { recursive: true });
+            }
+            let ext = 'bin';
+            const mime = mediaSource.mime_type || '';
+            if (mime.includes('jpeg') || mime.includes('jpg')) ext = 'jpg';
+            else if (mime.includes('png')) ext = 'png';
+            else if (mime.includes('webp')) ext = 'webp';
+            else if (mime.includes('gif')) ext = 'gif';
+            else if (mime.includes('mp4')) ext = 'mp4';
+            else if (mime.includes('ogg')) ext = 'ogg';
+            else if (mime.includes('pdf')) ext = 'pdf';
+            else if (mime.includes('audio')) ext = 'ogg';
+            fs.default.writeFileSync(path.default.join(uploadsDir, `${mediaSource.id}.${ext}`), buffer);
+            logger.info(`Media cached locally: ${mediaSource.id}.${ext}`);
           } catch (err) {
-            logger.warn(`Failed to resolve media URL for ${mediaSource.id}:`, err);
+            logger.warn(`Failed to resolve/cache media for ${mediaSource.id}:`, err);
           }
           messageData.media = {
             mediaId: mediaSource.id,
-            url: mediaUrl,
+            url: `/api/media/${mediaSource.id}`,
             mimeType: mediaSource.mime_type,
             sha256: mediaSource.sha256,
             caption: mediaSource.caption,
@@ -175,6 +196,21 @@ class WebhookService {
       });
 
       logger.info(`Incoming message from ${waId}: ${messageType}`);
+
+      // Trigger flow automation
+      try {
+        if (messageType === 'text' && waMessage.text?.body) {
+          await flowService.handleIncomingText(conversation._id.toString(), waMessage.text.body);
+        } else if (waMessage.interactive?.button_reply) {
+          await flowService.handleButtonClick(
+            conversation._id.toString(),
+            waMessage.interactive.button_reply.id,
+            waMessage.interactive.button_reply.title
+          );
+        }
+      } catch (err) {
+        logger.warn('Flow automation error:', err);
+      }
     } catch (error) {
       logger.error('Error handling incoming message:', error);
     }
@@ -205,10 +241,11 @@ class WebhookService {
       await message.save();
 
       const io = getIO();
-      io.to(`conversation:${message.conversation}`).emit('message_status', {
+      io.emit('message_status', {
         messageId: message._id,
         waMessageId: status.id,
         status: newStatus,
+        conversationId: message.conversation.toString(),
       });
 
       logger.debug(`Status update: ${status.id} -> ${status.status}`);

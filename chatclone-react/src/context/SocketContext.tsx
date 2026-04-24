@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { useAuth } from './AuthContext';
 
 interface SocketContextType {
   socket: Socket | null;
@@ -11,50 +10,31 @@ const SocketContext = createContext<SocketContextType>({ socket: null, connected
 
 const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
-// Single shared socket instance — created lazily, never torn down by React
 let sharedSocket: Socket | null = null;
-let sharedToken: string | null = null;
 
-function getSocket(token: string): Socket {
-  if (sharedSocket && sharedToken === token) {
-    return sharedSocket;
-  }
-  if (sharedSocket) {
-    sharedSocket.disconnect();
-  }
+function getSocket(): Socket {
+  if (sharedSocket) return sharedSocket;
   sharedSocket = io(socketUrl, {
-    auth: { token },
-    path: '/elwtapp/socket.io/',
+    path: '/socket.io/',
     transports: ['websocket'],
   });
-  sharedToken = token;
   return sharedSocket;
 }
 
 export function SocketProvider({ children }: { children: ReactNode }) {
-  const { user, token } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    if (!user || !token) return;
+    const s = getSocket();
 
-    const s = getSocket(token);
-
-    const onConnect = () => {
-      setConnected(true);
-      s.emit('join', user.id);
-    };
+    const onConnect = () => setConnected(true);
     const onDisconnect = () => setConnected(false);
 
     s.on('connect', onConnect);
     s.on('disconnect', onDisconnect);
 
-    // If already connected (e.g. StrictMode remount), sync state
-    if (s.connected) {
-      setConnected(true);
-      s.emit('join', user.id);
-    }
+    if (s.connected) setConnected(true);
 
     setSocket(s);
 
@@ -62,7 +42,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       s.off('connect', onConnect);
       s.off('disconnect', onDisconnect);
     };
-  }, [user, token]);
+  }, []);
 
   return (
     <SocketContext.Provider value={{ socket, connected }}>

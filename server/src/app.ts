@@ -15,6 +15,9 @@ import userRoutes from './routes/user.routes';
 import cannedResponseRoutes from './routes/cannedResponse.routes';
 import tagRoutes from './routes/tag.routes';
 import analyticsRoutes from './routes/analytics.routes';
+import sqlRoutes from './routes/sql.routes';
+import flowRoutes from './routes/flow.routes';
+import backupRoutes from './routes/backup.routes';
 
 const app = express();
 
@@ -46,6 +49,9 @@ app.use('/api/users', userRoutes);
 app.use('/api/canned-responses', cannedResponseRoutes);
 app.use('/api/tags', tagRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/sql', sqlRoutes);
+app.use('/api/flows', flowRoutes);
+app.use('/api/backup', backupRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

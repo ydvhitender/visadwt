@@ -16,6 +16,11 @@ export async function getConversation(id: string) {
   return data as Conversation;
 }
 
+export async function createConversation(phoneNumber: string) {
+  const { data } = await api.post('/conversations', { phoneNumber });
+  return data as Conversation;
+}
+
 export async function getMessages(conversationId: string, page = 1) {
   const { data } = await api.get(`/conversations/${conversationId}/messages`, {
     params: { page, limit: 50 },
@@ -35,4 +40,8 @@ export async function updateConversationStatus(id: string, status: string) {
 
 export async function markConversationRead(id: string) {
   await api.patch(`/conversations/${id}/read`);
+}
+
+export async function deleteConversation(id: string) {
+  await api.delete(`/conversations/${id}`);
 }

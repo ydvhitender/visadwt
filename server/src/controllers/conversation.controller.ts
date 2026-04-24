@@ -3,6 +3,17 @@ import { conversationService } from '../services/conversation.service';
 import { AuthRequest } from '../middleware/auth.middleware';
 
 export const conversationController = {
+  async create(req: AuthRequest, res: Response) {
+    try {
+      const { phoneNumber } = req.body;
+      if (!phoneNumber) return res.status(400).json({ error: 'Phone number is required' });
+      const conversation = await conversationService.create(phoneNumber);
+      res.status(201).json(conversation);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
   async list(req: AuthRequest, res: Response) {
     try {
       const { status, assignedTo, search, page, limit } = req.query;
@@ -71,6 +82,16 @@ export const conversationController = {
     try {
       const id = req.params.id as string;
       await conversationService.markRead(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  async remove(req: AuthRequest, res: Response) {
+    try {
+      const id = req.params.id as string;
+      await conversationService.remove(id);
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

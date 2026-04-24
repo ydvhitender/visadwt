@@ -25,6 +25,25 @@ export const tagController = {
     }
   },
 
+  async update(req: AuthRequest, res: Response) {
+    try {
+      const oldTag = await Tag.findById(req.params.id);
+      if (!oldTag) return res.status(404).json({ error: 'Tag not found' });
+      const oldName = oldTag.name;
+      const tag = await Tag.findByIdAndUpdate(req.params.id, req.body, { new: true });
+      // Update name in all conversations if name changed
+      if (req.body.name && req.body.name !== oldName) {
+        await Conversation.updateMany(
+          { tags: oldName },
+          { $set: { 'tags.$': req.body.name } }
+        );
+      }
+      res.json(tag);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
   async remove(req: AuthRequest, res: Response) {
     try {
       const tag = await Tag.findByIdAndDelete(req.params.id);

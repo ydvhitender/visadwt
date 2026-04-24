@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { Phone, RefreshCw, Radio, Users, BarChart3 } from "lucide-react";
 import ChatSidebar from "@/components/ChatSidebar";
 import ChatPanel from "@/components/ChatPanel";
 import EmptyChatPanel from "@/components/EmptyChatPanel";
@@ -10,19 +9,17 @@ import IconSidebar, { type IconTab } from "@/components/IconSidebar";
 import ResizeHandle from "@/components/ResizeHandle";
 import { useSocket } from "@/context/SocketContext";
 import { useAuth } from "@/context/AuthContext";
+import { useQueryClient } from "@tanstack/react-query";
 import { useConversations, useConversationUpdaters } from "@/hooks/useConversations";
 import { useMessageUpdaters } from "@/hooks/useMessages";
 import { getConversation } from "@/api/conversations";
+import { useNotification } from "@/hooks/useNotification";
 import type { Conversation, Message } from "@/types";
 
-const tabPlaceholders: Record<Exclude<IconTab, "chats" | "settings" | "analytics">, { icon: typeof Phone; title: string; description: string }> = {
-  calls: { icon: Phone, title: "Calls", description: "Start making calls to your contacts" },
-  status: { icon: RefreshCw, title: "Status", description: "View and share status updates" },
-  channels: { icon: Radio, title: "Channels", description: "Find channels to follow" },
-  communities: { icon: Users, title: "Communities", description: "Connect with your communities" },
-};
-
 const Index = () => {
+  useNotification();
+  const { user: authUser, updateUser } = useAuth();
+  const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [activeTab, setActiveTab] = useState<IconTab>("chats");
@@ -38,7 +35,6 @@ const Index = () => {
     setProfileWidth((w) => Math.min(600, Math.max(280, w + delta)));
   }, []);
   const { socket } = useSocket();
-  const { user } = useAuth();
   const { updateConversationInCache } = useConversationUpdaters();
   const { appendMessage, updateMessageStatus, updateMessageReactions } = useMessageUpdaters(selectedId);
 
@@ -133,6 +129,11 @@ const Index = () => {
     setProfileOpen(false);
   }, []);
 
+  const handleConversationUpdate = useCallback((updated: Conversation) => {
+    setSelectedConversation(updated);
+    updateConversationInCache(updated);
+  }, [updateConversationInCache]);
+
   return (
     <div className="flex h-screen w-screen min-w-[900px] bg-background">
       {/* Left icon sidebar */}
@@ -140,7 +141,9 @@ const Index = () => {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         unreadCount={totalUnread}
-        userName={user?.name ?? ""}
+        userName={authUser?.name ?? ''}
+        user={authUser}
+        onAvatarUpdate={(url) => updateUser({ avatar: url })}
       />
 
       {/* Analytics takes the full area after icon sidebar */}
@@ -159,25 +162,7 @@ const Index = () => {
               />
             ) : activeTab === "settings" ? (
               <SettingsPanel />
-            ) : (
-              (() => {
-                const info = tabPlaceholders[activeTab as keyof typeof tabPlaceholders];
-                const Icon = info.icon;
-                return (
-                  <div className="flex h-full flex-col bg-card">
-                    <div className="flex h-[60px] items-center px-5">
-                      <h1 className="text-[22px] font-bold text-foreground">{info.title}</h1>
-                    </div>
-                    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-secondary">
-                        <Icon size={28} className="text-muted-foreground" />
-                      </div>
-                      <p className="text-center text-sm text-muted-foreground">{info.description}</p>
-                    </div>
-                  </div>
-                );
-              })()
-            )}
+            ) : null}
           </div>
 
           {/* Resize handle for sidebar */}
@@ -191,6 +176,7 @@ const Index = () => {
                   conversation={selectedConversation}
                   onToggleProfile={() => setProfileOpen((v) => !v)}
                   isProfileOpen={profileOpen}
+                  onConversationUpdate={handleConversationUpdate}
                 />
               ) : (
                 <EmptyChatPanel />
@@ -206,6 +192,13 @@ const Index = () => {
                   <ContactProfilePanel
                     conversation={selectedConversation}
                     onClose={() => setProfileOpen(false)}
+                    onDeleteChat={() => {
+                      setSelectedId(null);
+                      setSelectedConversation(null);
+                      setProfileOpen(false);
+                      updateConversationInCache({ ...selectedConversation, _id: "__deleted__" } as any);
+                      qc.invalidateQueries({ queryKey: ["conversations"] });
+                    }}
                   />
                 </div>
               </>

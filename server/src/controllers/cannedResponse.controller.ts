@@ -6,16 +6,13 @@ export const cannedResponseController = {
   async list(req: AuthRequest, res: Response) {
     try {
       const { search } = req.query;
-      const query: any = {
-        $or: [{ isGlobal: true }, { createdBy: req.user!.id }],
-      };
+      // Shortcodes are universal — all users see all of them
+      const query: any = {};
       if (search) {
-        query.$and = [
-          { $or: [
-            { title: { $regex: search, $options: 'i' } },
-            { shortcut: { $regex: search, $options: 'i' } },
-            { body: { $regex: search, $options: 'i' } },
-          ]},
+        query.$or = [
+          { title: { $regex: search, $options: 'i' } },
+          { shortcut: { $regex: search, $options: 'i' } },
+          { body: { $regex: search, $options: 'i' } },
         ];
       }
       const responses = await CannedResponse.find(query).sort({ title: 1 });
@@ -27,9 +24,11 @@ export const cannedResponseController = {
 
   async create(req: AuthRequest, res: Response) {
     try {
+      // Shortcodes are always global (universal across all users)
       const response = await CannedResponse.create({
         ...req.body,
         createdBy: req.user!.id,
+        isGlobal: true,
       });
       res.status(201).json(response);
     } catch (error: any) {

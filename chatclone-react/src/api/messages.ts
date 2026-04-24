@@ -24,6 +24,7 @@ export interface SendMessageParams {
   templateName?: string;
   templateLanguage?: string;
   templateComponents?: Array<Record<string, unknown>>;
+  replyToMessageId?: string;
 }
 
 export async function sendMessage(params: SendMessageParams) {
@@ -31,10 +32,16 @@ export async function sendMessage(params: SendMessageParams) {
   return data;
 }
 
-export async function uploadMedia(file: File) {
+export async function uploadMedia(file: File, onProgress?: (percent: number) => void) {
   const formData = new FormData();
   formData.append('file', file);
-  const { data } = await api.post('/media/upload', formData);
+  const { data } = await api.post('/media/upload', formData, {
+    onUploadProgress: (e) => {
+      if (e.total && onProgress) {
+        onProgress(Math.round((e.loaded * 100) / e.total));
+      }
+    },
+  });
   return data as { mediaId: string; filename: string; mimeType: string };
 }
 
@@ -51,6 +58,21 @@ export async function getUsers() {
 export async function sendReaction(messageId: string, emoji: string) {
   const { data } = await api.post('/messages/react', { messageId, emoji });
   return data;
+}
+
+export async function deleteMessageForMe(messageId: string) {
+  const { data } = await api.delete(`/messages/${messageId}`);
+  return data;
+}
+
+export async function deleteMessageForEveryone(messageId: string) {
+  const { data } = await api.delete(`/messages/${messageId}/everyone`);
+  return data;
+}
+
+export async function togglePinMessage(messageId: string) {
+  const { data } = await api.patch(`/messages/${messageId}/pin`);
+  return data as { success: boolean; pinned: boolean };
 }
 
 export async function getMediaUrl(mediaId: string) {

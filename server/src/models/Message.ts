@@ -64,6 +64,7 @@ export interface IMessage extends Document {
   deliveredAt?: Date;
   readAt?: Date;
   failedReason?: string;
+  pinned?: boolean;
   timestamp: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -128,6 +129,7 @@ const MessageSchema = new Schema<IMessage>(
     deliveredAt: Date,
     readAt: Date,
     failedReason: String,
+    pinned: { type: Boolean, default: false },
     timestamp: { type: Date, required: true, index: true },
   },
   { timestamps: true }

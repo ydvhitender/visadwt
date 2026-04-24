@@ -19,18 +19,20 @@ class WhatsAppService {
   }
 
   // ──── TEXT ────
-  async sendText(to: string, body: string, previewUrl = false) {
-    return this.send({
+  async sendText(to: string, body: string, previewUrl = false, replyToMessageId?: string) {
+    const payload: Record<string, unknown> = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to,
       type: 'text',
       text: { preview_url: previewUrl, body },
-    });
+    };
+    if (replyToMessageId) payload.context = { message_id: replyToMessageId };
+    return this.send(payload);
   }
 
   // ──── IMAGE ────
-  async sendImage(to: string, imageIdOrUrl: string, caption?: string) {
+  async sendImage(to: string, imageIdOrUrl: string, caption?: string, replyToMessageId?: string) {
     const image: Record<string, string> = {};
     if (imageIdOrUrl.startsWith('http')) {
       image.link = imageIdOrUrl;
@@ -38,11 +40,13 @@ class WhatsAppService {
       image.id = imageIdOrUrl;
     }
     if (caption) image.caption = caption;
-    return this.send({ messaging_product: 'whatsapp', to, type: 'image', image });
+    const payload: Record<string, unknown> = { messaging_product: 'whatsapp', to, type: 'image', image };
+    if (replyToMessageId) payload.context = { message_id: replyToMessageId };
+    return this.send(payload);
   }
 
   // ──── DOCUMENT ────
-  async sendDocument(to: string, docIdOrUrl: string, filename: string, caption?: string) {
+  async sendDocument(to: string, docIdOrUrl: string, filename: string, caption?: string, replyToMessageId?: string) {
     const document: Record<string, string> = { filename };
     if (docIdOrUrl.startsWith('http')) {
       document.link = docIdOrUrl;
@@ -50,11 +54,13 @@ class WhatsAppService {
       document.id = docIdOrUrl;
     }
     if (caption) document.caption = caption;
-    return this.send({ messaging_product: 'whatsapp', to, type: 'document', document });
+    const payload: Record<string, unknown> = { messaging_product: 'whatsapp', to, type: 'document', document };
+    if (replyToMessageId) payload.context = { message_id: replyToMessageId };
+    return this.send(payload);
   }
 
   // ──── VIDEO ────
-  async sendVideo(to: string, videoIdOrUrl: string, caption?: string) {
+  async sendVideo(to: string, videoIdOrUrl: string, caption?: string, replyToMessageId?: string) {
     const video: Record<string, string> = {};
     if (videoIdOrUrl.startsWith('http')) {
       video.link = videoIdOrUrl;
@@ -62,18 +68,22 @@ class WhatsAppService {
       video.id = videoIdOrUrl;
     }
     if (caption) video.caption = caption;
-    return this.send({ messaging_product: 'whatsapp', to, type: 'video', video });
+    const payload: Record<string, unknown> = { messaging_product: 'whatsapp', to, type: 'video', video };
+    if (replyToMessageId) payload.context = { message_id: replyToMessageId };
+    return this.send(payload);
   }
 
   // ──── AUDIO ────
-  async sendAudio(to: string, audioIdOrUrl: string) {
+  async sendAudio(to: string, audioIdOrUrl: string, replyToMessageId?: string) {
     const audio: Record<string, string> = {};
     if (audioIdOrUrl.startsWith('http')) {
       audio.link = audioIdOrUrl;
     } else {
       audio.id = audioIdOrUrl;
     }
-    return this.send({ messaging_product: 'whatsapp', to, type: 'audio', audio });
+    const payload: Record<string, unknown> = { messaging_product: 'whatsapp', to, type: 'audio', audio };
+    if (replyToMessageId) payload.context = { message_id: replyToMessageId };
+    return this.send(payload);
   }
 
   // ──── LOCATION ────
@@ -200,6 +210,36 @@ class WhatsAppService {
     const url = `https://graph.facebook.com/${env.WA_API_VERSION}/${env.WA_BUSINESS_ACCOUNT_ID}/message_templates`;
     const response = await axios.get(url, {
       headers: { Authorization: `Bearer ${env.WA_ACCESS_TOKEN}` },
+    });
+    return response.data;
+  }
+
+  async createTemplate(template: {
+    name: string;
+    language: string;
+    category: string;
+    components: Array<Record<string, unknown>>;
+  }) {
+    const url = `https://graph.facebook.com/${env.WA_API_VERSION}/${env.WA_BUSINESS_ACCOUNT_ID}/message_templates`;
+    const response = await axios.post(url, template, {
+      headers: { Authorization: `Bearer ${env.WA_ACCESS_TOKEN}` },
+    });
+    return response.data;
+  }
+
+  async editTemplate(templateId: string, components: Array<Record<string, unknown>>) {
+    const url = `https://graph.facebook.com/${env.WA_API_VERSION}/${templateId}`;
+    const response = await axios.post(url, { components }, {
+      headers: { Authorization: `Bearer ${env.WA_ACCESS_TOKEN}` },
+    });
+    return response.data;
+  }
+
+  async deleteTemplate(templateName: string) {
+    const url = `https://graph.facebook.com/${env.WA_API_VERSION}/${env.WA_BUSINESS_ACCOUNT_ID}/message_templates`;
+    const response = await axios.delete(url, {
+      headers: { Authorization: `Bearer ${env.WA_ACCESS_TOKEN}` },
+      params: { name: templateName },
     });
     return response.data;
   }
